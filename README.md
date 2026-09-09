@@ -143,6 +143,27 @@ app id; `selfieCheckLegacy()` will not return proofs until it is.
 | CRE chain selector | `arc-testnet` → `3034092155422581607` |
 | KeystoneForwarder | `0x76c9cf548b4179F8901cda1f8623568b58215E62` |
 | Native gas token | USDC at **18 decimals** |
+| Escrow ERC-20 (USDC) | `0x3600000000000000000000000000000000000000`, **6 decimals** |
+| GrantEscrow (deployed) | `0x85AC2a3e1EBc0959599025eB6eF36eD34c862840` |
+
+Deploy tx `0xd3441328d55241861bcb355424301669306e8cfe7918bd9612b8f1388d9b7697`
+(block 61237469, 2,090,602 gas).
+
+### `forge script` cannot send USDC transactions on Arc
+
+Arc's USDC checks a blocklist precompile at `0x1800…0001` on every transfer. It is a *native*
+precompile — its bytecode is the stub `0x01` — so Foundry's local REVM cannot execute it and any
+`transferFrom` reverts with `StackUnderflow`. Because `forge script` always executes the script
+locally to collect the transactions it will broadcast, it fails before sending anything, and
+`--skip-simulation` does not change that.
+
+Contract *deployment* is unaffected (`scripts/deploy-arc.sh` uses `forge script` happily). Anything
+that moves USDC has to go through `cast send`, which estimates gas on the node where the precompile
+is real — see `scripts/seed-grant.sh`. On-chain, `isBlocklisted` returns `false` for both the escrow
+and the deployer; the revert is purely a simulation artifact.
+
+> The ERC-20 at `0x3600…0000` mirrors the native USDC balance, so **paying gas reduces the balance
+> available to escrow**. Budget for both out of the same funds.
 
 **Two different USDC decimalities coexist, and confusing them is a 10¹² error.** Arc's *native*
 gas token is USDC with **18 decimals** (`lib/chain.ts`), while the *escrowed ERC-20* is USDC with

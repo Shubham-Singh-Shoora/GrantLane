@@ -13,9 +13,26 @@ export type GrantView = {
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="label">{label}</dt>
-      <dd className="text-sm text-slate-100">{value}</dd>
+      <dd className="truncate text-sm text-slate-100">{value}</dd>
+      {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
+    </div>
+  );
+}
+
+/** A full address overflows a half-width column and collides with its neighbour. */
+function shortAddress(address: string): string {
+  return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
+}
+
+function AddressStat({ label, address, hint }: { label: string; address: string; hint?: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="label">{label}</dt>
+      <dd className="truncate font-mono text-xs text-slate-100" title={address}>
+        {shortAddress(address)}
+      </dd>
       {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
     </div>
   );
@@ -51,19 +68,19 @@ export function EscrowStatus({ grant }: { grant: GrantView }) {
         </p>
       </div>
 
-      <dl className="grid grid-cols-2 gap-4">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-4">
         <Stat label="Still escrowed" value={`${formatUsdc(remaining)} USDC`} />
-        <Stat label="Grantee" value={grant.grantee} />
-        <Stat
+        <AddressStat label="Grantee" address={grant.grantee} />
+        <AddressStat
           label="Payout wallet"
-          value={grant.payoutWallet}
+          address={grant.payoutWallet}
           hint={
             grant.payoutWallet.toLowerCase() === grant.grantee.toLowerCase()
               ? "Default — same as grantee"
-              : "Changed via a verified Selfie Check"
+              : "Changed via Selfie Check"
           }
         />
-        <Stat label="Funder" value={grant.funder} />
+        <AddressStat label="Funder" address={grant.funder} />
       </dl>
     </section>
   );

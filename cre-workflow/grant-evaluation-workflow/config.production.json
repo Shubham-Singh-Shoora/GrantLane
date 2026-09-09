@@ -5,7 +5,7 @@
     "gasLimit": "1000000"
   },
   "scoring": {
-    "approvalThresholdBps": 7000,
+    "approvalThresholdBps": 8000,
     "evidenceApiBaseUrl": "https://your-grantlane-deployment.example",
     "fallbackRubric": "# Milestone review rubric (NON-CONFIDENTIAL fallback for simulation).\n# One criterion per line; the text before the colon is the keyword matched\n# against the evidence bundle. The real rubric is a CRE secret.\npull request: a merged PR implementing the milestone\ntests: automated tests covering the new behaviour\ndemo: a recording or deployed URL showing it working\ndocs: written explanation of the change"
   },

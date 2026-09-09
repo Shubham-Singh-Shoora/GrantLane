@@ -32,3 +32,6 @@ cre-workflow/secrets.yaml
 *.log
 .vercel
 *.tsbuildinfo
+cre-workflow/**/binary.wasm
+cre-workflow/**/dist/
+cre-workflow/**/.cre_build_tmp.js

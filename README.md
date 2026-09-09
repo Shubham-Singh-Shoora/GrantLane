@@ -116,10 +116,26 @@ npm run dev        # http://localhost:3000
 ### CRE workflow
 
 ```bash
-cre login                     # required — `cre init` and simulate both need auth
+cre login                     # required — init, build and simulate all need auth
 npm run workflow:typecheck
+npm run workflow:build
 npm run workflow:simulate
 ```
+
+A milestone has been paid end to end on live Arc — TEE scoring, DON report, USDC out of escrow.
+The run, with tx hashes and before/after balances, is in
+[docs/cre-evidence/live-payout-run.md](docs/cre-evidence/live-payout-run.md).
+
+To repeat it: `scripts/seed-grant.sh` creates a grant, `scripts/prepare-payout-demo.sh` marks a
+milestone submitted and points the escrow at the tenant's mock forwarder, then
+`npm run workflow:broadcast` runs the workflow for real.
+
+Two things to know before deploying the workflow rather than simulating it:
+
+- **Deployment registry** is `private` for this org. `onchain:ethereum-testnet-sepolia` — what the
+  scaffold suggests — is not available; `cre workflow simulate` reports which registries are.
+- **Deploy access** is a separate grant (`cre account access`). Until it is enabled, runs go through
+  the simulator, which still writes real transactions with `--broadcast`.
 
 ---
 

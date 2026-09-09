@@ -1,20 +1,25 @@
-# CRE project settings.
-#
-# `cre init` generates this file when you are logged in. It is written out here
-# so the repo is complete before authentication; reconcile it with the generated
-# version after running `cre login`.
-name: grantlane
+# ==========================================================================
+# CRE PROJECT SETTINGS
+# ==========================================================================
+# Keyed by target. `cre workflow <cmd> --target <name>` selects one.
+# RPC URLs support ${VAR} syntax, resolved from cre-workflow/.env or the shell,
+# which keeps credentialled endpoints out of this committed file.
+# ==========================================================================
 
-targets:
-  staging-settings:
-    workflow-registry-chain-selector-name: ethereum-testnet-sepolia
-    rpcs:
-      - chain-name: arc-testnet
-        url: https://rpc.testnet.arc.io
-      - chain-name: ethereum-testnet-sepolia
-        url: ${ETHEREUM_SEPOLIA_RPC_URL}
+staging-settings:
+  rpcs:
+    # Settlement chain: GrantEscrow lives here and the workflow writes its
+    # report here.
+    - chain-name: arc-testnet
+      url: https://rpc.testnet.arc.io
+    # Workflow Registry chain — where the workflow itself is registered.
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com
 
-  production-settings:
-    rpcs:
-      - chain-name: arc-testnet
-        url: https://rpc.testnet.arc.io
+# ==========================================================================
+production-settings:
+  rpcs:
+    - chain-name: arc-testnet
+      url: https://rpc.testnet.arc.io
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com

@@ -1,0 +1,16 @@
+{
+  "grantId": "0",
+  "milestoneId": 0,
+  "payoutAmount": "600000",
+  "evidence": {
+    "grantId": "0",
+    "milestoneId": 0,
+    "summary": "Implemented the milestone: opened a pull request adding the escrow release path, with tests covering approval, rejection and replay. Recorded a demo of the full flow and wrote docs describing the report format.",
+    "artifacts": [
+      "https://github.com/Shubham-Singh-Shoora/GrantLane/pull/1",
+      "https://example.invalid/grantlane-demo.mp4"
+    ],
+    "submittedAt": "2026-09-09T12:00:00.000Z",
+    "evidenceHash": "0x0000000000000000000000000000000000000000000000000000000000000001"
+  }
+}

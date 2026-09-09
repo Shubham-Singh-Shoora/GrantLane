@@ -1,8 +1,9 @@
 {
   "name": "grant-evaluation-workflow",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "main": "dist/main.js",
   "private": true,
-  "type": "module",
+  "license": "UNLICENSED",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
@@ -11,10 +12,6 @@
     "viem": "^2.56.3"
   },
   "devDependencies": {
-    "@types/bun": "^1.2.21",
-    "typescript": "^5.6.3"
-  },
-  "engines": {
-    "bun": ">=1.2.21"
+    "typescript": "5.9.3"
   }
 }

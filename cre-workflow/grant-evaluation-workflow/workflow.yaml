@@ -1,13 +1,30 @@
-# Workflow manifest. `cre workflow deploy` reads this.
-name: grant-evaluation-workflow
-author: grantlane
+# ==========================================================================
+# CRE WORKFLOW SETTINGS
+# ==========================================================================
+# Keyed by target; overrides project.yaml values.
+#
+# The TEE binding is NOT declared here — it is part of the handler itself,
+# via `cre.handlerInTee(trigger, fn, [{ tee: "nitro", regions: [...] }])`
+# in main.ts. See the grant-evaluation handler there.
+# ==========================================================================
 
-# Entry point compiled by the CRE CLI (Bun).
-main: main.ts
+staging-settings:
+  user-workflow:
+    workflow-name: "grant-evaluation-workflow-staging"
+    deployment-registry: "private"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.json"
+    # The reviewer rubric is fetched inside the enclave; upload it with
+    # `cre secrets create` before deploying, then point this at ../secrets.yaml.
+    secrets-path: ""
 
-# The handler runs inside a Nitro TEE so the reviewer rubric and the raw
-# evidence bundle stay confidential; only the verdict crosses back to the DON.
-tee:
-  - tee: nitro
-    regions:
-      - us-west-2
+# ==========================================================================
+production-settings:
+  user-workflow:
+    workflow-name: "grant-evaluation-workflow-production"
+    deployment-registry: "private"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.production.json"
+    secrets-path: ""

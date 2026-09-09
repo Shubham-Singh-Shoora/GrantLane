@@ -60,12 +60,15 @@ The workflow typechecks against the real SDK:
 npm run workflow:typecheck    # clean
 ```
 
-## To capture
+## Captured
 
-- [ ] `cre workflow simulate grant-evaluation-workflow --target staging-settings` output → `simulation-*.log`
-- [ ] Live execution log showing the TEE handler running and the report being written
-- [ ] Arc Testnet transaction hash for a `MilestonePaid` event
-- [ ] Screenshot of the reviewer dashboard showing the score and the settled milestone
+A full live run — TEE scoring through to USDC leaving escrow on Arc — is written up in
+[live-payout-run.md](./live-payout-run.md), including the report tx, before/after balances and the
+resulting milestone state.
 
-> Simulation and deployment both require `cre login`. Run it before capturing the above; the CLI
-> refuses non-interactive use without `CRE_API_KEY`.
+| | |
+| --- | --- |
+| Workflow builds to WASM | `cre workflow build` — binary hash `a68d1e96…52d4c5` |
+| Simulation passes | scored 10000 bps, approved, TEE bound to AWS Nitro us-west-2 |
+| Live payout on Arc | tx `0xbf1412ac…4bc7b3`, block 61242269, 0.6 USDC released |
+| Deploy access | **not yet enabled** on this org — run `cre account access` |

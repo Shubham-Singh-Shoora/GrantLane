@@ -1,0 +1,20 @@
+# CRE project settings.
+#
+# `cre init` generates this file when you are logged in. It is written out here
+# so the repo is complete before authentication; reconcile it with the generated
+# version after running `cre login`.
+name: grantlane
+
+targets:
+  staging-settings:
+    workflow-registry-chain-selector-name: ethereum-testnet-sepolia
+    rpcs:
+      - chain-name: arc-testnet
+        url: https://rpc.testnet.arc.io
+      - chain-name: ethereum-testnet-sepolia
+        url: ${ETHEREUM_SEPOLIA_RPC_URL}
+
+  production-settings:
+    rpcs:
+      - chain-name: arc-testnet
+        url: https://rpc.testnet.arc.io

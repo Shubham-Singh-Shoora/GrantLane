@@ -1,0 +1,13 @@
+# Workflow manifest. `cre workflow deploy` reads this.
+name: grant-evaluation-workflow
+author: grantlane
+
+# Entry point compiled by the CRE CLI (Bun).
+main: main.ts
+
+# The handler runs inside a Nitro TEE so the reviewer rubric and the raw
+# evidence bundle stay confidential; only the verdict crosses back to the DON.
+tee:
+  - tee: nitro
+    regions:
+      - us-west-2

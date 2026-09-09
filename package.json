@@ -1,0 +1,16 @@
+{
+  "name": "grantlane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Milestone grant escrow — confidential scoring on Chainlink CRE, settlement on Arc, identity by World ID.",
+  "scripts": {
+    "dev": "npm --prefix apps/web run dev",
+    "build": "npm --prefix apps/web run build",
+    "typecheck": "npm --prefix apps/web run typecheck",
+    "gen:abi": "node scripts/gen-abi.mjs",
+    "contracts:build": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts && forge build'",
+    "contracts:test": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts && forge test -vv'",
+    "workflow:typecheck": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.bun/bin:$PATH; cd cre-workflow/grant-evaluation-workflow && bun x tsc --noEmit'",
+    "workflow:simulate": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.local/bin:$HOME/.bun/bin:$PATH; cd cre-workflow && cre workflow simulate grant-evaluation-workflow --target staging-settings'"
+  }
+}

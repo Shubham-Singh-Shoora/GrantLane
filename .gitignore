@@ -1,0 +1,34 @@
+# deps
+node_modules/
+.pnp
+.pnp.js
+
+# next
+.next/
+out/
+build/
+next-env.d.ts
+
+# env
+.env
+.env.local
+.env*.local
+!.env.example
+
+# foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/
+
+# cre
+cre-workflow/**/node_modules/
+cre-workflow/**/dist/
+cre-workflow/.env
+cre-workflow/secrets.yaml
+
+# misc
+.DS_Store
+*.log
+.vercel
+*.tsbuildinfo

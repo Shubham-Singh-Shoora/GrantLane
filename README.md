@@ -1,0 +1,182 @@
+# GrantLane
+
+Milestone-based grant escrow where the review is confidential and the payout is automatic.
+
+A funder escrows USDC against a list of milestones. When a grantee submits evidence, a
+**Chainlink CRE** workflow scores it **inside a Nitro TEE** — the reviewer rubric and the raw
+submission never leave the enclave — and hands only the verdict back to the DON. The DON signs a
+report and writes it to **Arc**, which releases the USDC. Repointing a grant's payout wallet is
+gated on a **World ID Selfie Check**.
+
+No human reviewer ever sees the raw submission, and no server key can move escrowed funds.
+
+---
+
+## How the three pieces fit
+
+```
+grantee ──submit evidence──► /api/milestones ──HTTP trigger──► CRE workflow
+                                   │                               │
+                          hash mirrored on-chain          [ Nitro TEE ]
+                                   │                       rubric (secret)
+                                   ▼                       evidence (confidential HTTP)
+                            GrantEscrow.submitEvidence            │ verdict only
+                                                                  ▼
+                                                            DON consensus
+                                                          runtime.report(...)
+                                                                  │
+grantee ◄──── USDC ──── GrantEscrow._processReport ◄── evmClient.writeReport (Arc)
+
+
+grantee ──Selfie Check──► /api/verify-selfie ──► World verify API
+                                   │
+                        EIP-712 attestation (attestor key)
+                                   ▼
+                    GrantEscrow.changePayoutWallet (grantee sends the tx)
+```
+
+Two properties worth calling out:
+
+- **Only a DON-signed report can pay.** `GrantEscrow` inherits `ReceiverTemplate`, which rejects
+  any caller that is not the configured `KeystoneForwarder`, and optionally any report from an
+  unexpected workflow owner. The server has no path to release funds.
+- **The attestor key can redirect a payout but never release one.** It signs an EIP-712 struct that
+  the grantee submits themselves; the nullifier is spent on first use, so a replayed Selfie Check
+  proof is rejected on-chain.
+
+---
+
+## Layout
+
+| Path | What it is |
+| --- | --- |
+| `apps/web` | Next.js 14 app — applicant + reviewer UI, and the server routes World requires |
+| `contracts` | Foundry project — `GrantEscrow`, `ReceiverTemplate`, deploy script, 20 tests |
+| `cre-workflow` | CRE TypeScript workflow — the TEE handler that scores milestones |
+| `docs` | The two required hackathon write-ups |
+| `scripts/gen-abi.mjs` | Regenerates the typed ABI the web app imports |
+
+---
+
+## Prerequisites
+
+Foundry, Bun, and the CRE CLI are Linux-first; on Windows they run under **WSL**. The npm scripts
+already wrap them, so `npm run contracts:test` works from Windows.
+
+```bash
+# in WSL
+curl -L https://foundry.paradigm.xyz | bash && ~/.foundry/bin/foundryup
+curl -fsSL https://bun.sh/install | bash          # needs `unzip` installed
+curl -fsSL https://github.com/smartcontractkit/cre-cli/releases/latest/download/install.sh | bash
+```
+
+Verified versions in this repo: Foundry `1.8.1`, Bun `1.4.2`, CRE CLI `v1.32.0` (Arc support needs
+CLI ≥ 1.0.7 and TS SDK ≥ 1.3.1 — both clear).
+
+---
+
+## Setup
+
+```bash
+cp .env.example .env       # then fill it in
+npm install --prefix apps/web
+```
+
+Restore the Solidity dependencies (they are gitignored, and `forge install` ran with `--no-git`, so
+there is no submodule to restore from):
+
+```bash
+wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts && forge install foundry-rs/forge-std --no-git && forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git'
+```
+
+### Contracts
+
+```bash
+npm run contracts:test        # 20 passing
+npm run contracts:build
+```
+
+Deploy to Arc Testnet (chain `5042002`, RPC `https://rpc.testnet.arc.io`). Fund the deployer from
+[faucet.circle.com](https://faucet.circle.com) — **USDC is Arc's native gas token**, so the same
+asset pays for gas and fills the escrow.
+
+```bash
+wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts && \
+  forge script script/Deploy.s.sol:Deploy --rpc-url $ARC_RPC_URL --private-key $DEPLOYER_PRIVATE_KEY --broadcast'
+```
+
+Then set `NEXT_PUBLIC_GRANT_ESCROW_ADDRESS` and run `npm run gen:abi`.
+
+### Web
+
+```bash
+npm run dev        # http://localhost:3000
+```
+
+### CRE workflow
+
+```bash
+cre login                     # required — `cre init` and simulate both need auth
+npm run workflow:typecheck
+npm run workflow:simulate
+```
+
+---
+
+## Configuration that is easy to get wrong
+
+**World ID 4.x needs a Relying Party, not just an App ID.** `IDKit` requires an `rp_context`
+containing an ECDSA signature over the request nonce and validity window, produced by
+`@worldcoin/idkit-server`'s `signRequest()`. That means `WORLD_RP_ID` **and** `WORLD_RP_SIGNING_KEY`
+in addition to `NEXT_PUBLIC_WORLD_APP_ID`. The browser fetches a fresh context from
+`/api/idkit-context` immediately before opening the widget.
+
+**Selfie Check is beta-gated.** Email `developers@toolsforhumanity.com` to have it enabled for your
+app id; `selfieCheckLegacy()` will not return proofs until it is.
+
+**Arc Testnet values**, all verified against live sources:
+
+| | |
+| --- | --- |
+| Chain ID | `5042002` (`eth_chainId` → `0x4cef52`) |
+| RPC | `https://rpc.testnet.arc.io` |
+| CRE chain selector | `arc-testnet` → `3034092155422581607` |
+| KeystoneForwarder | `0x76c9cf548b4179F8901cda1f8623568b58215E62` |
+
+---
+
+## Where this repo departs from the original spec
+
+The spec was written against docs that have since moved. These are the corrections, each verified
+against the shipped packages rather than assumed:
+
+- **`IDKitWidget` does not exist in `@worldcoin/idkit@4.x`.** The request-mode component is
+  `IDKitRequestWidget` (or the `useIDKitRequest` hook), and the credential is selected with a
+  preset. `selfieCheckLegacy()` is confirmed exported.
+- **`rp_context` is required**, which forces the RP signing key and `/api/idkit-context` described
+  above. The spec did not mention Relying Party registration at all.
+- **Proof verification is `POST /api/v4/verify/{rp_id}` on `developer.world.org`**, and the
+  complete IDKit result is forwarded verbatim. There is no `verification_level` field to construct.
+- **`ReceiverTemplate.sol` is not an npm package.** Chainlink publishes it as a copy-paste file, so
+  `contracts/src/ReceiverTemplate.sol` is an independent implementation of the documented behaviour
+  (forwarder check, optional workflow-owner/name gates, abstract `_processReport`). Its metadata
+  decoding matches `KeystoneFeedDefaultMetadataLib` from `@chainlink/contracts`.
+- **In a TEE handler `runtime.report()` is not available.** `TeeRuntime` exposes `reportFromDon()`
+  and `usingTheDons()`; the workflow crosses back to the DON explicitly before signing a report.
+- **`cre init` requires authentication.** The `cre-workflow/` tree here is hand-written against the
+  SDK's actual types (it typechecks against `@chainlink/cre-sdk@1.20.0`); reconcile it with the
+  generated scaffold after `cre login`.
+
+## Known gaps
+
+- **The scoring function is keyword matching, not judgement.** It is deterministic, which the TEE
+  requires, but it is a placeholder for a real evaluator. The interesting property being
+  demonstrated is *where* the scoring runs, not how clever it is.
+- **`lib/store.ts` is in-memory.** Evidence bundles and execution records do not survive a restart
+  and are per-isolate on serverless. Chain state is unaffected.
+- **CRE execution polling is best-effort.** There is no stable public REST endpoint for reading an
+  execution by id, so `/api/execution-status` reconciles against on-chain milestone state and treats
+  that as authoritative.
+- **The escrow asset is an ERC-20.** On Arc, USDC is also the native gas token; if you want the
+  escrow to hold native USDC instead of an ERC-20 representation, `GrantEscrow` needs a native-value
+  variant of the transfer paths.

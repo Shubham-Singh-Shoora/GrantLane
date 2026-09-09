@@ -1,0 +1,20 @@
+{
+  "name": "grant-evaluation-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chainlink/cre-sdk": "^1.20.0",
+    "viem": "^2.56.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.21",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "bun": ">=1.2.21"
+  }
+}

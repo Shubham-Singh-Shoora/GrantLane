@@ -1,0 +1,14 @@
+{
+  "evm": {
+    "chainSelectorName": "arc-testnet",
+    "grantEscrowAddress": "0x0000000000000000000000000000000000000000",
+    "gasLimit": "1000000"
+  },
+  "scoring": {
+    "approvalThresholdBps": 7000,
+    "evidenceApiBaseUrl": "https://your-grantlane-deployment.example"
+  },
+  "secrets": {
+    "rubricSecretId": "GRANT_REVIEW_RUBRIC"
+  }
+}

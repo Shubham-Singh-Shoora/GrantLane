@@ -142,6 +142,25 @@ app id; `selfieCheckLegacy()` will not return proofs until it is.
 | RPC | `https://rpc.testnet.arc.io` |
 | CRE chain selector | `arc-testnet` → `3034092155422581607` |
 | KeystoneForwarder | `0x76c9cf548b4179F8901cda1f8623568b58215E62` |
+| Native gas token | USDC at **18 decimals** |
+
+**Two different USDC decimalities coexist, and confusing them is a 10¹² error.** Arc's *native*
+gas token is USDC with **18 decimals** (`lib/chain.ts`), while the *escrowed ERC-20* is USDC with
+the usual **6 decimals** (`formatUsdc` in `lib/contracts.ts`). Native balances and escrow amounts
+must never be formatted with the same helper.
+
+### One `.env`, at the repo root
+
+Next.js only reads `.env` from its own directory, but the contracts and the workflow want the same
+values. `apps/web/load-env.mjs` bridges that: `next.config.mjs` imports it, so the root `.env` is
+loaded for both `dev` and `build`. It handles inline `# comments`, quotes and `export` prefixes, and
+never overrides a variable already set in the environment.
+
+You should see this on startup:
+
+```
+[grantlane] loaded env from D:\...\GrantLane\.env
+```
 
 ---
 

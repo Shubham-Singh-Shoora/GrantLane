@@ -1,0 +1,10 @@
+# Default: let git normalise text in the repo, check out native on Windows.
+* text=auto
+
+# Shell scripts must stay LF. A CRLF .sh fails in WSL with
+#   /usr/bin/env: 'bash\r': No such file or directory
+*.sh text eol=lf
+
+# Solidity and the CRE workflow are read by Linux toolchains (forge, bun).
+*.sol text eol=lf
+*.mjs text eol=lf

@@ -330,8 +330,68 @@
 
   /* Horizontal scroll without the bar — used on the header nav, where a visible
      track cuts through the pill rail and looks like a rendering fault. */
+  /* Section divider.
+   *
+   * A hard edge-to-edge hairline reads as a table border — it cuts the page
+   * into boxes. This fades out at both ends so the sections feel separated
+   * rather than partitioned, and carries the mark's four-point spark at the
+   * centre, sitting in a punched-out ring of page background so the rule
+   * appears to pass behind it.
+   *
+   * Composited from two pseudo-elements on the section itself, so the markup
+   * stays a plain <section> and nothing has to be nested. */
   .section-rule {
-    border-top: 1px solid var(--color-divider);
+    position: relative;
+    border-top: none;
+  }
+
+  .section-rule::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 1px;
+    /* Weighted toward the middle rather than an even fade: strongest where the
+       ornament sits, dissolving outward, so it reads as drawn on purpose
+       instead of a line that ran out of ink. */
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--color-text) 7%, transparent) 22%,
+      color-mix(in srgb, var(--color-text) 20%, transparent) 50%,
+      color-mix(in srgb, var(--color-text) 7%, transparent) 78%,
+      transparent 100%
+    );
+  }
+
+  .section-rule::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 13px;
+    height: 13px;
+    translate: -50% -50%;
+    background: var(--color-accent);
+    /* Four-point star — the mark's spark, flattened to a polygon. */
+    clip-path: polygon(
+      50% 0%,
+      59% 41%,
+      100% 50%,
+      59% 59%,
+      50% 100%,
+      41% 59%,
+      0% 50%,
+      41% 41%
+    );
+    /* The ring of page colour is what makes the rule look interrupted. */
+    box-shadow: 0 0 0 7px var(--color-bg);
+    opacity: 0.85;
+  }
+
+  /* For dividers where an ornament would be one flourish too many. */
+  .section-rule-plain::after {
+    display: none;
   }
 
   .no-scrollbar {

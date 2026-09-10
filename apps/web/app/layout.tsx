@@ -27,6 +27,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <Link href="/admin" className="hover:text-slate-200">
                     Reviewer
                   </Link>
+                  <Link href="/verify" className="hover:text-slate-200">
+                    Verify
+                  </Link>
                 </nav>
                 <div className="ml-auto">
                   <WalletBadge />

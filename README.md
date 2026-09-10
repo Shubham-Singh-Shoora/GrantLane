@@ -147,8 +147,7 @@ containing an ECDSA signature over the request nonce and validity window, produc
 in addition to `NEXT_PUBLIC_WORLD_APP_ID`. The browser fetches a fresh context from
 `/api/idkit-context` immediately before opening the widget.
 
-**Selfie Check is beta-gated.** Email `developers@toolsforhumanity.com` to have it enabled for your
-app id; `selfieCheckLegacy()` will not return proofs until it is.
+**Selfie Check entitlement is server-side, per App ID.** The SDK type still says "currently in preview", but that is stale docstring text — it cannot know your entitlement. Visit `/verify` to find out: a QR means the App ID is enabled, and `credential_unavailable`/`feature_unavailable` means it is not.
 
 **Arc Testnet values**, all verified against live sources:
 
@@ -207,8 +206,10 @@ The spec was written against docs that have since moved. These are the correctio
 against the shipped packages rather than assumed:
 
 - **`IDKitWidget` does not exist in `@worldcoin/idkit@4.x`.** The request-mode component is
-  `IDKitRequestWidget` (or the `useIDKitRequest` hook), and the credential is selected with a
-  preset. `selfieCheckLegacy()` is confirmed exported.
+  `IDKitRequestWidget`, and the credential is selected with a preset. `selfieCheckLegacy()` is
+  confirmed exported. This app uses the `useIDKitRequest` hook rather than the widget, so that the
+  grant flow and `/verify` share one code path and so refusals surface as their real error code
+  instead of a generic message.
 - **`rp_context` is required**, which forces the RP signing key and `/api/idkit-context` described
   above. The spec did not mention Relying Party registration at all.
 - **Proof verification is `POST /api/v4/verify/{rp_id}` on `developer.world.org`**, and the
@@ -236,3 +237,8 @@ against the shipped packages rather than assumed:
 - **The escrow asset is an ERC-20.** On Arc, USDC is also the native gas token; if you want the
   escrow to hold native USDC instead of an ERC-20 representation, `GrantEscrow` needs a native-value
   variant of the transfer paths.
+- **The Selfie Check half-loop ends at the QR.** Everything up to and including the connector link is
+  verified — signed `rp_context`, an accepted request, a scannable QR. Completing it requires a
+  person with World App, so the returned proof has not been round-tripped through
+  `/api/verify-selfie` and on into `changePayoutWallet` yet. The contract side of that path is
+  covered by tests (valid attestation, forged signature, replayed nullifier, expired deadline).

@@ -11,6 +11,10 @@ after losing a key. Everything else in the app is authorised by a normal wallet 
 `selfieCheckLegacy()` preset, proof verified server-side, result turned into an EIP-712 attestation
 the user submits on-chain themselves.
 
+**Status:** working. The App ID is entitled to request Selfie Check — a live request returns a
+`world.org/verify` connector link, rendered as a QR at `/verify`. See note 5 below, which is the
+single most useful piece of feedback in this document.
+
 ---
 
 ## What worked well
@@ -80,16 +84,33 @@ page still dominates search.
 
 **What would have helped:** a prominent deprecation banner on the v2 reference pointing at v4.
 
-### 5. Selfie Check being beta-gated is discoverable too late
+### 5. The "preview" docstring outlived the gate, and cost us a day of hedging
 
-The gate is mentioned in a one-line comment in the type definition
-(`"Preview: Selfie Check is currently in preview. Contact us if you need it enabled."`) and in the
-docs, but it is easy to build the whole flow before discovering that the credential will not return
-proofs for your app id. For a time-boxed hackathon that is an expensive discovery.
+`SelfieCheckLegacyPreset` still carries the line *"Preview: Selfie Check is currently in preview.
+Contact us if you need it enabled."* in its type definition. We read that, emailed for access, and
+planned around being blocked.
 
-**What would have helped:** surface the gate in the Developer Portal UI — show Selfie Check in the
-credential list with a "request access" button and a clear disabled state, rather than having it
-fail at proof time.
+We were not blocked. Calling `selfieCheckLegacy()` against our App ID returned a working connector
+link immediately — no `credential_unavailable`, no `feature_unavailable`. The entitlement gate is
+server-side and was already open for us; the docstring is stale text in a package published well
+before we tried it.
+
+The cost was not technical, it was planning: we sequenced the whole build around an assumed blocker
+and only discovered otherwise by ignoring the comment and calling the function.
+
+**What would have helped:** two things, both cheap.
+
+1. **Don't ship gate information as a docstring.** A comment in a `.d.ts` cannot know your app's
+   entitlement, so it will be wrong for somebody no matter what it says. It reads as authoritative
+   because it ships with the code.
+2. **Expose entitlement in the Developer Portal**, per credential, per App ID — a simple
+   enabled/disabled badge. The only way we could answer "is this app allowed to request Selfie
+   Check?" was to attempt a real request and read the error code. That is a fine fallback; it is a
+   poor primary mechanism.
+
+The error codes themselves are good — `credential_unavailable` and `feature_unavailable` are exactly
+the right granularity, and made it easy to build a diagnostic page that reports the gate state
+honestly. The problem is only that attempting the call is the *only* way to reach them.
 
 ---
 

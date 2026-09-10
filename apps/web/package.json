@@ -11,11 +11,13 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.59.0",
+    "@types/qrcode": "^1.5.6",
     "@wagmi/core": "^2.16.0",
     "@worldcoin/idkit": "^4.2.3",
     "@worldcoin/idkit-core": "^4.2.4",
     "@worldcoin/idkit-server": "^1.1.1",
     "next": "^14.2.15",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "server-only": "^0.0.1",

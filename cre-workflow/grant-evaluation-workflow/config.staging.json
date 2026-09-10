@@ -1,7 +1,7 @@
 {
   "evm": {
     "chainSelectorName": "arc-testnet",
-    "grantEscrowAddress": "0x85AC2a3e1EBc0959599025eB6eF36eD34c862840",
+    "grantEscrowAddress": "0xCd84686B7fCc4bC120c0Bfb5e97a92bb9fbEc994",
     "gasLimit": "1000000"
   },
   "scoring": {

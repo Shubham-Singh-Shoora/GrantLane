@@ -1,19 +1,26 @@
 import "server-only";
 
 import type { Hex } from "viem";
+import { kvGet, kvSet } from "./kv";
 
 /**
  * Evidence and execution bookkeeping.
  *
- * Deliberately in-memory: the authoritative state of a grant lives on Arc, and
- * the authoritative state of a scoring run lives in CRE. What is kept here is
- * only the join between the two — which execution was started for which
- * milestone, and where its evidence bundle can be fetched — so the UI can show
- * "scoring in progress" between the submit transaction and the report landing.
+ * The authoritative state of a grant lives on Arc and the authoritative state of
+ * a scoring run lives in CRE. What is kept here is the join between the two —
+ * which execution was started for which milestone, and the evidence bundle the
+ * enclave fetches back over confidential HTTP.
  *
- * Swap this for Postgres/Redis before anything but a demo: a serverless deploy
- * runs multiple isolates and this map is per-isolate.
+ * This used to be an in-memory Map. That breaks in a serverless deployment for a
+ * reason worth spelling out: the CRE workflow calls back into /api/milestones to
+ * read the bundle, and that request can land on a different instance than the
+ * one that stored it — so the enclave would find nothing and silently score the
+ * triggered payload instead of the authoritative bundle. Going through lib/kv
+ * makes the read reliable wherever it lands.
  */
+
+const EVIDENCE_KEY = "grantlane:evidence";
+const EXECUTIONS_KEY = "grantlane:executions";
 
 export type EvidenceBundle = {
   grantId: string;
@@ -44,45 +51,64 @@ function key(grantId: string, milestoneId: number): string {
   return `${grantId}:${milestoneId}`;
 }
 
-// Survives hot reload in dev, where module state would otherwise reset.
-const globalStore = globalThis as unknown as {
-  __grantlaneEvidence?: Map<string, EvidenceBundle>;
-  __grantlaneExecutions?: Map<string, ExecutionRecord>;
-};
-
-const evidence = (globalStore.__grantlaneEvidence ??= new Map<string, EvidenceBundle>());
-const executions = (globalStore.__grantlaneExecutions ??= new Map<string, ExecutionRecord>());
-
-export function putEvidence(bundle: EvidenceBundle): void {
-  evidence.set(key(bundle.grantId, bundle.milestoneId), bundle);
+async function readMap<T>(storeKey: string): Promise<Record<string, T>> {
+  const raw = await kvGet(storeKey);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, T>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
-export function getEvidence(grantId: string, milestoneId: number): EvidenceBundle | undefined {
-  return evidence.get(key(grantId, milestoneId));
+async function writeMap<T>(storeKey: string, value: Record<string, T>): Promise<void> {
+  await kvSet(storeKey, JSON.stringify(value));
 }
 
-export function putExecution(record: ExecutionRecord): void {
-  executions.set(record.executionId, record);
+export async function putEvidence(bundle: EvidenceBundle): Promise<void> {
+  const all = await readMap<EvidenceBundle>(EVIDENCE_KEY);
+  all[key(bundle.grantId, bundle.milestoneId)] = bundle;
+  await writeMap(EVIDENCE_KEY, all);
 }
 
-export function getExecution(executionId: string): ExecutionRecord | undefined {
-  return executions.get(executionId);
+export async function getEvidence(grantId: string, milestoneId: number): Promise<EvidenceBundle | undefined> {
+  const all = await readMap<EvidenceBundle>(EVIDENCE_KEY);
+  return all[key(grantId, milestoneId)];
 }
 
-export function updateExecution(executionId: string, patch: Partial<ExecutionRecord>): ExecutionRecord | undefined {
-  const existing = executions.get(executionId);
+export async function putExecution(record: ExecutionRecord): Promise<void> {
+  const all = await readMap<ExecutionRecord>(EXECUTIONS_KEY);
+  all[record.executionId] = record;
+  await writeMap(EXECUTIONS_KEY, all);
+}
+
+export async function getExecution(executionId: string): Promise<ExecutionRecord | undefined> {
+  const all = await readMap<ExecutionRecord>(EXECUTIONS_KEY);
+  return all[executionId];
+}
+
+export async function updateExecution(
+  executionId: string,
+  patch: Partial<ExecutionRecord>,
+): Promise<ExecutionRecord | undefined> {
+  const all = await readMap<ExecutionRecord>(EXECUTIONS_KEY);
+  const existing = all[executionId];
   if (!existing) return undefined;
+
   const next = { ...existing, ...patch, updatedAt: new Date().toISOString() };
-  executions.set(executionId, next);
+  all[executionId] = next;
+  await writeMap(EXECUTIONS_KEY, all);
   return next;
 }
 
-export function listExecutionsForGrant(grantId: string): ExecutionRecord[] {
-  return [...executions.values()]
+export async function listExecutionsForGrant(grantId: string): Promise<ExecutionRecord[]> {
+  const all = await readMap<ExecutionRecord>(EXECUTIONS_KEY);
+  return Object.values(all)
     .filter((e) => e.grantId === grantId)
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
-export function latestExecutionFor(grantId: string, milestoneId: number): ExecutionRecord | undefined {
-  return listExecutionsForGrant(grantId).find((e) => e.milestoneId === milestoneId);
+export async function latestExecutionFor(grantId: string, milestoneId: number): Promise<ExecutionRecord | undefined> {
+  return (await listExecutionsForGrant(grantId)).find((e) => e.milestoneId === milestoneId);
 }

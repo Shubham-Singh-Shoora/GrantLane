@@ -75,7 +75,7 @@ export async function startEvaluation(request: EvaluationRequest): Promise<Execu
       ...base,
       error: "CRE_TRIGGER_URL is not set; evidence stored but no workflow run started.",
     };
-    putExecution(record);
+    await putExecution(record);
     return record;
   }
 
@@ -103,7 +103,7 @@ export async function startEvaluation(request: EvaluationRequest): Promise<Execu
         status: "failed",
         error: `Trigger returned ${response.status}: ${JSON.stringify(body).slice(0, 300)}`,
       };
-      putExecution(record);
+      await putExecution(record);
       return record;
     }
 
@@ -115,7 +115,7 @@ export async function startEvaluation(request: EvaluationRequest): Promise<Execu
           : base.executionId;
 
     const record: ExecutionRecord = { ...base, executionId, status: "running" };
-    putExecution(record);
+    await putExecution(record);
     return record;
   } catch (cause) {
     const record: ExecutionRecord = {
@@ -123,7 +123,7 @@ export async function startEvaluation(request: EvaluationRequest): Promise<Execu
       status: "failed",
       error: `Could not reach CRE trigger: ${String(cause)}`,
     };
-    putExecution(record);
+    await putExecution(record);
     return record;
   }
 }
@@ -160,10 +160,10 @@ export async function fetchExecutionStatus(record: ExecutionRecord): Promise<Exe
     if (!mapped) return record;
 
     return (
-      updateExecution(record.executionId, {
+      (await updateExecution(record.executionId, {
         status: mapped,
         txHash: typeof body.txHash === "string" ? (body.txHash as Hex) : record.txHash,
-      }) ?? record
+      })) ?? record
     );
   } catch {
     // A status probe failing is not an execution failure — keep what we have.

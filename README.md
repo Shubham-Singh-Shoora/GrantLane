@@ -114,6 +114,10 @@ Then set `NEXT_PUBLIC_GRANT_ESCROW_ADDRESS` and run `npm run gen:abi`.
 npm run dev        # http://localhost:3000
 ```
 
+Deploying? See **[DEPLOYMENT.md](DEPLOYMENT.md)**. The short version: Vercel with Root Directory
+`apps/web`, plus a Redis store — Vercel's filesystem is read-only, so without one every application
+is lost on the next cold start. Nothing else needs hosting.
+
 ### CRE workflow
 
 ```bash

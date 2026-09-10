@@ -13,7 +13,7 @@ type Patch = {
 };
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
-  const application = getApplication(params.id);
+  const application = await getApplication(params.id);
   if (!application) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ application }, { headers: { "Cache-Control": "no-store" } });
 }
@@ -27,7 +27,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
  * to bind the off-chain application to its on-chain grant id.
  */
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
-  const existing = getApplication(params.id);
+  const existing = await getApplication(params.id);
   if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   let patch: Patch;
@@ -38,7 +38,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   if (patch.action === "decline") {
-    const updated = updateApplication(params.id, {
+    const updated = await updateApplication(params.id, {
       status: "declined",
       reviewNote: patch.reviewNote?.trim() || null,
     });
@@ -62,7 +62,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       );
     }
 
-    const updated = updateApplication(params.id, {
+    const updated = await updateApplication(params.id, {
       status: "approved",
       approvedMilestones: milestones,
       reviewNote: patch.reviewNote?.trim() || null,
@@ -74,7 +74,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (!patch.grantId || !/^\d+$/.test(patch.grantId)) {
       return NextResponse.json({ error: "invalid_grant_id" }, { status: 400 });
     }
-    const updated = updateApplication(params.id, {
+    const updated = await updateApplication(params.id, {
       status: "funded",
       grantId: patch.grantId,
       fundingTxHash: patch.fundingTxHash ?? null,

@@ -1,9 +1,8 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import type { Hex } from "viem";
+import { kvGet, kvSet } from "./kv";
 
 /**
  * Applications and milestone metadata — the off-chain half of a grant.
@@ -13,14 +12,16 @@ import type { Hex } from "viem";
  * website, the repo, what each milestone actually has to deliver — lives here,
  * keyed back to the on-chain grant id once the grant is funded.
  *
- * Backed by a JSON file rather than the in-memory map the rest of the app uses,
- * because an application written by the applicant has to still be there when the
- * reviewer opens their own session. That makes this single-instance only: fine
- * for a local demo, wrong for a real deployment, where this is a database.
+ * Persistence goes through lib/kv, which is a JSON file locally and Redis in a
+ * serverless deployment. Every function here is async for that reason, even the
+ * reads that look like they could be synchronous.
+ *
+ * The whole collection is one key. That is fine at grant-round scale — tens to
+ * low hundreds of applications — and keeps writes atomic without a transaction.
+ * It would be the wrong shape at ten thousand.
  */
 
-const DATA_DIR = process.env.GRANTLANE_DATA_DIR ?? join(process.cwd(), ".data");
-const DATA_FILE = join(DATA_DIR, "applications.json");
+const KEY = "grantlane:applications";
 
 export type ApplicationStatus = "submitted" | "approved" | "declined" | "funded";
 
@@ -77,45 +78,46 @@ export type Application = {
   fundingTxHash: string | null;
 };
 
-type Db = { applications: Application[] };
-
-function load(): Db {
+async function load(): Promise<Application[]> {
+  const raw = await kvGet(KEY);
+  if (!raw) return [];
   try {
-    if (!existsSync(DATA_FILE)) return { applications: [] };
-    const parsed = JSON.parse(readFileSync(DATA_FILE, "utf8")) as Db;
-    return Array.isArray(parsed.applications) ? parsed : { applications: [] };
+    const parsed = JSON.parse(raw) as Application[];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    // A corrupt file should not take the app down; start clean rather than throw.
-    return { applications: [] };
+    return [];
   }
 }
 
-function save(db: Db): void {
-  mkdirSync(dirname(DATA_FILE), { recursive: true });
-  writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+async function save(applications: Application[]): Promise<void> {
+  await kvSet(KEY, JSON.stringify(applications));
 }
 
-export function listApplications(): Application[] {
-  return load().applications.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+export async function listApplications(): Promise<Application[]> {
+  const applications = await load();
+  return applications.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function getApplication(id: string): Application | undefined {
-  return load().applications.find((a) => a.id === id);
+export async function getApplication(id: string): Promise<Application | undefined> {
+  return (await load()).find((a) => a.id === id);
 }
 
-export function getApplicationByGrantId(grantId: string): Application | undefined {
-  return load().applications.find((a) => a.grantId === grantId);
+export async function getApplicationByGrantId(grantId: string): Promise<Application | undefined> {
+  return (await load()).find((a) => a.grantId === grantId);
 }
 
 /** One verified human gets one open application — the anti-bot rule. */
-export function findByNullifier(nullifierHash: string): Application | undefined {
-  return load().applications.find((a) => a.nullifierHash === nullifierHash);
+export async function findByNullifier(nullifierHash: string): Promise<Application | undefined> {
+  return (await load()).find((a) => a.nullifierHash === nullifierHash);
 }
 
-export function createApplication(
-  input: Omit<Application, "id" | "createdAt" | "updatedAt" | "status" | "reviewNote" | "approvedMilestones" | "grantId" | "fundingTxHash">,
-): Application {
-  const db = load();
+export async function createApplication(
+  input: Omit<
+    Application,
+    "id" | "createdAt" | "updatedAt" | "status" | "reviewNote" | "approvedMilestones" | "grantId" | "fundingTxHash"
+  >,
+): Promise<Application> {
+  const applications = await load();
   const now = new Date().toISOString();
 
   const application: Application = {
@@ -130,24 +132,24 @@ export function createApplication(
     fundingTxHash: null,
   };
 
-  db.applications.push(application);
-  save(db);
+  applications.push(application);
+  await save(applications);
   return application;
 }
 
-export function updateApplication(id: string, patch: Partial<Application>): Application | undefined {
-  const db = load();
-  const index = db.applications.findIndex((a) => a.id === id);
+export async function updateApplication(id: string, patch: Partial<Application>): Promise<Application | undefined> {
+  const applications = await load();
+  const index = applications.findIndex((a) => a.id === id);
   if (index === -1) return undefined;
 
-  const next = { ...db.applications[index], ...patch, id, updatedAt: new Date().toISOString() };
-  db.applications[index] = next;
-  save(db);
+  const next = { ...applications[index], ...patch, id, updatedAt: new Date().toISOString() };
+  applications[index] = next;
+  await save(applications);
   return next;
 }
 
 /** Milestone metadata for a funded grant, so the detail page can show criteria. */
-export function milestonesForGrant(grantId: string): ProposedMilestone[] | null {
-  const application = getApplicationByGrantId(grantId);
+export async function milestonesForGrant(grantId: string): Promise<ProposedMilestone[] | null> {
+  const application = await getApplicationByGrantId(grantId);
   return application?.approvedMilestones ?? application?.proposedMilestones ?? null;
 }

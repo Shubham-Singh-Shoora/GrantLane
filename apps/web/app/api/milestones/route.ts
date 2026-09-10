@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   };
 
   const bundle: EvidenceBundle = { ...draft, evidenceHash: hashEvidence(draft) };
-  putEvidence(bundle);
+  await putEvidence(bundle);
 
   // The workflow needs to know what this milestone still owes, and the chain is
   // the only authority on that.
@@ -108,8 +108,8 @@ export async function GET(request: Request) {
 
   return NextResponse.json(
     {
-      bundle: getEvidence(grantId, milestoneId) ?? null,
-      execution: latestExecutionFor(grantId, milestoneId) ?? null,
+      bundle: (await getEvidence(grantId, milestoneId)) ?? null,
+      execution: (await latestExecutionFor(grantId, milestoneId)) ?? null,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

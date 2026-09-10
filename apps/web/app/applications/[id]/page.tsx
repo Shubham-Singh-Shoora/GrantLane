@@ -18,14 +18,14 @@ const STATUS_LABEL = {
   declined: "Declined",
 } as const;
 
-export default function ApplicationDetailPage({
+export default async function ApplicationDetailPage({
   params,
   searchParams,
 }: {
   params: { id: string };
   searchParams: { submitted?: string };
 }) {
-  const application = getApplication(params.id);
+  const application = await getApplication(params.id);
   if (!application) notFound();
 
   const milestones = application.approvedMilestones ?? application.proposedMilestones;

@@ -14,7 +14,7 @@ export default async function GrantPage({ params }: { params: { id: string } }) 
   try {
     const escrowAddress = grantEscrowAddress();
     const [grant, milestones] = await Promise.all([readGrant(grantId), readMilestones(grantId)]);
-    const metadata = milestonesForGrant(params.id);
+    const metadata = await milestonesForGrant(params.id);
 
     return (
       <GrantDetail

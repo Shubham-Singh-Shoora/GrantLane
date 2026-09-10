@@ -2,6 +2,7 @@ import Link from "next/link";
 import { GranterOnly } from "@/components/GranterOnly";
 import { formatUnits } from "viem";
 import { listApplications, type Application } from "@/lib/applications";
+import { hasDurableStore } from "@/lib/kv";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +20,8 @@ const STATUS_LABEL: Record<Application["status"], string> = {
   declined: "Declined",
 };
 
-export default function ApplicationsPage() {
-  const applications = listApplications();
+export default async function ApplicationsPage() {
+  const applications = await listApplications();
   const needsReview = applications.filter((a) => a.status === "submitted").length;
 
   return (
@@ -39,6 +40,19 @@ export default function ApplicationsPage() {
           Open the applicant form
         </Link>
       </div>
+
+      {/* Deploying without Redis means every application vanishes on the next
+          cold start — loud here rather than discovered later. */}
+      {process.env.NODE_ENV === "production" && !hasDurableStore() && (
+        <div
+          className="mb-4 rounded-[20px] px-4 py-3.5 text-[13px]"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 14%, transparent)" }}
+        >
+          <strong>No durable store configured.</strong> Applications are being written to a filesystem that this host
+          does not persist — they will disappear. Set <span className="mono">KV_REST_API_URL</span> and{" "}
+          <span className="mono">KV_REST_API_TOKEN</span> (see DEPLOYMENT.md).
+        </div>
+      )}
 
       {applications.length === 0 ? (
         <div

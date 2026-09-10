@@ -22,9 +22,9 @@ export async function GET(request: Request) {
 
   let record =
     executionId != null
-      ? getExecution(executionId)
+      ? await getExecution(executionId)
       : grantId && milestoneIdRaw != null
-        ? latestExecutionFor(grantId, Number(milestoneIdRaw))
+        ? await latestExecutionFor(grantId, Number(milestoneIdRaw))
         : undefined;
 
   if (!record) {
@@ -48,11 +48,11 @@ export async function GET(request: Request) {
       // 2 = Approved, 3 = Rejected, 4 = Paid
       if (onchain.status === 2 || onchain.status === 3 || onchain.status === 4) {
         record =
-          updateExecution(record.executionId, {
+          (await updateExecution(record.executionId, {
             status: "succeeded",
             approved: onchain.status !== 3,
             scoreBps: onchain.scoreBps,
-          }) ?? record;
+          })) ?? record;
       }
     }
   } catch (cause) {

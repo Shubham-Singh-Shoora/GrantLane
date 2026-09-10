@@ -25,7 +25,7 @@ type Body = {
 };
 
 export async function GET() {
-  return NextResponse.json({ applications: listApplications() }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ applications: await listApplications() }, { headers: { "Cache-Control": "no-store" } });
 }
 
 /**
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
   }
 
   const nullifierHash = check.nullifierHash;
-  if (findByNullifier(nullifierHash)) {
+  if (await findByNullifier(nullifierHash)) {
     return NextResponse.json(
       { error: "already_applied", detail: "This World ID has already submitted an application." },
       { status: 409 },
@@ -113,7 +113,7 @@ export async function POST(request: Request) {
 
   const requestedAmount = milestones.reduce((sum, m) => sum + BigInt(m.amount), 0n).toString();
 
-  const application = createApplication({
+  const application = await createApplication({
     projectName,
     organisation: organisation ?? "",
     pitch,

@@ -12,6 +12,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.59.0",
     "@types/qrcode": "^1.5.6",
+    "@vercel/analytics": "^2.0.1",
     "@wagmi/core": "^2.16.0",
     "@worldcoin/idkit": "^4.2.3",
     "@worldcoin/idkit-core": "^4.2.4",

@@ -8,6 +8,7 @@ import { NavTabs } from "@/components/NavTabs";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { RoleSwitch } from "@/components/RoleSwitch";
 import { Logo } from "@/components/Logo";
+import { Analytics } from "@vercel/analytics/next";
 
 const caprasimo = Caprasimo({
   weight: "400",
@@ -92,6 +93,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Settlement on Arc Testnet (chain 5042002) · scoring by Chainlink CRE · identity by World ID Selfie Check
             </footer>
           </div>
+          {/* Cookieless page analytics. Dynamic routes are reported by their
+              pattern (/grant/[id]), so no grant or application id is sent. */}
+          <Analytics />
         </Providers>
       </body>
     </html>

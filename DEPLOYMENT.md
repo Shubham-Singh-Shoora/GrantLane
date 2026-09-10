@@ -100,7 +100,18 @@ Once the build is green, open the deployment and confirm:
 3. **`/applications`** with a granter wallet connected shows the queue with no "no durable store"
    warning. With any other wallet it shows *Granter access only*.
 
-## 5. Point the CRE workflow at the deployment
+## 5. Turn on Web Analytics
+
+`@vercel/analytics` is already mounted in the root layout, but it only reports once the feature is
+enabled for the project: **Vercel → your project → Analytics → Enable**. Until then the script has
+no endpoint to talk to and you will see an empty dashboard.
+
+Nothing to configure in code, and no environment variable. It is cookieless, and dynamic routes are
+reported by their pattern (`/grant/[id]`), so no grant or application id leaves the browser. In
+local development the package deliberately does not load — it stubs the queue and logs to the
+console — so an empty dashboard while running `npm run dev` is expected.
+
+## 6. Point the CRE workflow at the deployment
 
 This is the step that only works once you're public. In
 `cre-workflow/grant-evaluation-workflow/config.staging.json`:

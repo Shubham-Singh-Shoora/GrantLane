@@ -52,62 +52,73 @@ export default function VerifyPage() {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-lg font-semibold text-slate-100">Selfie Check</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted">
-          Proves a live human without revealing who they are. GrantLane uses it to gate changing a
-          grant&apos;s payout wallet — the step an attacker would take after stealing a session.
+    <div className="animate-rise">
+      <div className="pb-5 pt-6">
+        <p className="card-kicker m-0">World ID</p>
+        <h1 className="mb-2 mt-1 text-[40px]">Selfie Check</h1>
+        <p className="m-0 max-w-[58ch] text-[15px]" style={{ opacity: 0.7 }}>
+          Proves a live human without revealing who they are. GrantLane uses it to gate changing a grant&apos;s payout
+          wallet — the step an attacker would take after stealing a session.
         </p>
       </div>
 
       {contextError && (
-        <div className="panel border-danger/40 p-4">
-          <p className="label text-danger">Could not build a request context</p>
-          <p className="mt-1 text-sm text-slate-300">{contextError}</p>
-          <p className="mt-2 text-xs text-muted">
-            This is a server-side failure before World is contacted — check WORLD_RP_ID and
-            WORLD_RP_SIGNING_KEY in .env.
+        <div
+          className="rounded-[22px] px-5 py-[18px]"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
+        >
+          <p className="m-0 font-heading text-base">Could not build a request context</p>
+          <p className="m-0 mt-1.5 text-sm" style={{ opacity: 0.85 }}>
+            {contextError}
           </p>
-          <button className="btn-ghost mt-3" onClick={() => void loadContext()}>
+          <p className="m-0 mt-2 text-xs" style={{ opacity: 0.65 }}>
+            This is a server-side failure before World is contacted — check <span className="mono">WORLD_RP_ID</span>{" "}
+            and <span className="mono">WORLD_RP_SIGNING_KEY</span> in .env.
+          </p>
+          <button className="btn-secondary mt-3 font-body font-semibold" onClick={() => void loadContext()}>
             Retry
           </button>
         </div>
       )}
 
       {context && (
-        <>
-          <div className="panel p-4">
-            <dl className="grid gap-3 sm:grid-cols-3">
+        <div className="flex flex-col gap-4">
+          <div className="card elev-sm" style={{ padding: 20 }}>
+            <dl className="grid gap-3.5 sm:grid-cols-3">
               <div className="min-w-0">
-                <dt className="label">App ID</dt>
-                <dd className="truncate font-mono text-xs text-slate-200" title={context.app_id}>
+                <dt className="kicker">App ID</dt>
+                <dd className="mono m-0 mt-0.5 truncate text-xs" title={context.app_id}>
                   {context.app_id}
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="label">RP ID</dt>
-                <dd className="truncate font-mono text-xs text-slate-200">{context.rp_context.rp_id}</dd>
+                <dt className="kicker">RP ID</dt>
+                <dd className="mono m-0 mt-0.5 truncate text-xs">{context.rp_context.rp_id}</dd>
               </div>
               <div className="min-w-0">
-                <dt className="label">Action</dt>
-                <dd className="truncate font-mono text-xs text-slate-200">{context.action}</dd>
+                <dt className="kicker">Action</dt>
+                <dd className="mono m-0 mt-0.5 truncate text-xs">{context.action}</dd>
               </div>
             </dl>
-            <p className="mt-3 text-xs text-muted">
+            <p className="m-0 mt-3 text-xs" style={{ opacity: 0.6 }}>
               Request context signed server-side, valid for{" "}
               {context.rp_context.expires_at - context.rp_context.created_at}s.
             </p>
           </div>
 
           <SelfieCheckRunner context={context} signal="grantlane-standalone" onResult={onResult} />
-        </>
+        </div>
       )}
 
       {verifyResponse && (
-        <div className="panel p-4">
-          <p className="label">Server verification response</p>
-          <pre className="mt-2 max-h-72 overflow-auto rounded-md bg-ink p-3 text-xs text-muted">{verifyResponse}</pre>
+        <div className="card elev-sm mt-4" style={{ padding: 20 }}>
+          <p className="kicker m-0">Server verification response</p>
+          <pre
+            className="mono mt-2 max-h-72 overflow-auto rounded-[16px] p-3 text-xs"
+            style={{ background: "color-mix(in srgb, var(--color-text) 6%, transparent)", opacity: 0.85 }}
+          >
+            {verifyResponse}
+          </pre>
         </div>
       )}
     </div>

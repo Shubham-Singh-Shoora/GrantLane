@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import { formatUsdc } from "@/lib/contracts";
+import { shortAddress } from "@/lib/status";
 
 export type GrantView = {
   grantId: string;
@@ -11,77 +15,67 @@ export type GrantView = {
   active: boolean;
 };
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="label">{label}</dt>
-      <dd className="truncate text-sm text-slate-100">{value}</dd>
-      {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
-    </div>
-  );
-}
-
-/** A full address overflows a half-width column and collides with its neighbour. */
-function shortAddress(address: string): string {
-  return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
-}
-
-function AddressStat({ label, address, hint }: { label: string; address: string; hint?: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="label">{label}</dt>
-      <dd className="truncate font-mono text-xs text-slate-100" title={address}>
-        {shortAddress(address)}
-      </dd>
-      {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
-    </div>
-  );
-}
-
 export function EscrowStatus({ grant }: { grant: GrantView }) {
+  const [techOpen, setTechOpen] = useState(false);
+
   const total = BigInt(grant.totalAmount);
   const released = BigInt(grant.releasedAmount);
   const remaining = total - released;
   const pct = total === 0n ? 0 : Number((released * 10_000n) / total) / 100;
 
   return (
-    <section className="panel p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-100">Escrow</h2>
-        <span
-          className={
-            grant.active
-              ? "chip bg-accent/10 text-accent ring-accent/40"
-              : "chip bg-white/5 text-muted ring-edge"
-          }
-        >
+    <section className="card elev-sm" style={{ padding: 22, gap: 14 }}>
+      <div className="flex items-center gap-2.5">
+        <h4 className="m-0">Escrow</h4>
+        <span className={`ml-auto ${grant.active ? "tag tag-accent-2" : "tag tag-neutral"}`}>
           {grant.active ? "Active" : "Closed"}
         </span>
       </div>
 
-      <div className="mb-4">
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-          <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(pct, 100)}%` }} />
+      <div>
+        <div className="track h-2.5">
+          <div
+            className="h-full rounded-full transition-[width] duration-700"
+            style={{ background: "var(--color-accent)", width: `${Math.min(pct, 100)}%` }}
+          />
         </div>
-        <p className="mt-1.5 text-xs text-muted">
-          {formatUsdc(released)} of {formatUsdc(total)} USDC released ({pct.toFixed(1)}%)
+        <p className="m-0 mt-2.5 text-[13px]" style={{ opacity: 0.7 }}>
+          {formatUsdc(released)} of {formatUsdc(total)} released · {pct.toFixed(1)}%
         </p>
       </div>
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-4">
-        <Stat label="Still escrowed" value={`${formatUsdc(remaining)} USDC`} />
-        <AddressStat label="Grantee" address={grant.grantee} />
-        <AddressStat
-          label="Payout wallet"
-          address={grant.payoutWallet}
-          hint={
-            grant.payoutWallet.toLowerCase() === grant.grantee.toLowerCase()
-              ? "Default — same as grantee"
-              : "Changed via Selfie Check"
-          }
-        />
-        <AddressStat label="Funder" address={grant.funder} />
-      </dl>
+      <div className="grid grid-cols-2 gap-3.5">
+        <div className="min-w-0">
+          <p className="kicker m-0">Still escrowed</p>
+          <p className="m-0 mt-0.5 font-semibold">{formatUsdc(remaining)} USDC</p>
+        </div>
+        <div className="min-w-0">
+          <p className="kicker m-0">Milestones</p>
+          <p className="m-0 mt-0.5 font-semibold">{grant.active ? "In progress" : "Closed"}</p>
+        </div>
+      </div>
+
+      <button onClick={() => setTechOpen((v) => !v)} className="btn-ghost self-start" style={{ paddingLeft: 0 }}>
+        {techOpen ? "Hide technical detail" : "Technical detail"}
+      </button>
+
+      {techOpen && (
+        <dl className="animate-rise m-0 flex flex-col gap-2.5">
+          {[
+            { label: "Grantee", value: grant.grantee },
+            { label: "Funder", value: grant.funder },
+            { label: "Escrow token", value: grant.token },
+            { label: "Total (base units)", value: grant.totalAmount },
+          ].map((t) => (
+            <div key={t.label} className="min-w-0">
+              <dt className="kicker">{t.label}</dt>
+              <dd className="mono m-0 mt-0.5 break-all text-xs" title={t.value}>
+                {t.value.startsWith("0x") ? shortAddress(t.value, 12, 8) : t.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </section>
   );
 }

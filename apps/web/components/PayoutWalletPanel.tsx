@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { isAddress } from "viem";
 import { useAccount, useWriteContract } from "wagmi";
 import { grantEscrowAbi } from "@/lib/contracts";
+import { shortAddress } from "@/lib/status";
 import { SelfieCheckButton, type Attestation } from "./SelfieCheckButton";
 
 /**
@@ -26,11 +27,28 @@ export function PayoutWalletPanel({
   const { isConnected } = useAccount();
   const { writeContractAsync, isPending } = useWriteContract();
 
+  const [editing, setEditing] = useState(false);
   const [newWallet, setNewWallet] = useState("");
   const [attestation, setAttestation] = useState<Attestation | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
   const walletValid = isAddress(newWallet);
+  const walletError = newWallet.length > 0 && !walletValid ? "Not a valid address." : null;
+
+  // Attestations expire; a visible countdown is the honest way to show it.
+  useEffect(() => {
+    if (!attestation) return;
+    const timer = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [attestation]);
+
+  const remaining = useMemo(() => {
+    if (!attestation) return null;
+    const left = Number(attestation.deadline) - now;
+    if (left <= 0) return "expired";
+    return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  }, [attestation, now]);
 
   async function applyChange() {
     if (!attestation) return;
@@ -50,67 +68,113 @@ export function PayoutWalletPanel({
       });
       setNote(`Submitted: ${hash}`);
       setAttestation(null);
+      setEditing(false);
+      setNewWallet("");
     } catch (cause) {
       setNote(String(cause instanceof Error ? cause.message : cause));
     }
   }
 
-  if (!isGrantee) {
-    return (
-      <section className="panel p-5">
-        <h2 className="text-sm font-semibold text-slate-100">Payout wallet</h2>
-        <p className="mt-2 break-all font-mono text-xs text-muted">{currentPayoutWallet}</p>
-        <p className="mt-2 text-xs text-muted">Only the grantee can change this, and only after a Selfie Check.</p>
-      </section>
-    );
+  function cancel() {
+    setEditing(false);
+    setAttestation(null);
+    setNewWallet("");
+    setNote(null);
   }
 
   return (
-    <section className="panel p-5">
-      <h2 className="text-sm font-semibold text-slate-100">Payout wallet</h2>
-      <p className="mt-1 break-all font-mono text-xs text-muted">{currentPayoutWallet}</p>
+    <section className="card elev-sm" style={{ padding: 22, gap: 12 }}>
+      <h4 className="m-0">Payout wallet</h4>
+      <p className="mono m-0 break-all text-[12.5px]" style={{ opacity: 0.8 }} title={currentPayoutWallet}>
+        {shortAddress(currentPayoutWallet, 14, 8)}
+      </p>
+      <p className="m-0 text-[12.5px]" style={{ opacity: 0.6 }}>
+        {currentPayoutWallet.toLowerCase() === "" ? "" : "Where approved milestones release USDC."}
+      </p>
 
-      <div className="mt-4 space-y-3">
+      <div className="rule my-0.5" />
+
+      {!isGrantee && (
+        <p className="m-0 text-[13px]" style={{ opacity: 0.7 }}>
+          Only the grantee can change this, and only after a Selfie Check.
+        </p>
+      )}
+
+      {isGrantee && !editing && !attestation && (
         <div>
-          <label className="label" htmlFor="new-wallet">
-            New payout wallet
-          </label>
-          <input
-            id="new-wallet"
-            className="field font-mono text-xs"
-            value={newWallet}
-            onChange={(e) => {
-              setNewWallet(e.target.value);
-              setAttestation(null);
-            }}
-            placeholder="0x…"
-          />
-          {newWallet.length > 0 && !walletValid && (
-            <p className="mt-1 text-xs text-danger">Not a valid address.</p>
-          )}
+          <p className="m-0 mb-2.5 text-[13.5px]" style={{ opacity: 0.8 }}>
+            Changing where this grant pays out needs a fresh proof that you&apos;re a live human — it&apos;s the one
+            action a stolen session would go for.
+          </p>
+          <button className="btn-secondary font-body font-semibold" onClick={() => setEditing(true)}>
+            Change payout wallet
+          </button>
         </div>
+      )}
 
-        {!attestation ? (
+      {isGrantee && editing && !attestation && (
+        <div className="animate-rise flex flex-col gap-3">
+          <div className="field">
+            <label htmlFor="new-wallet">New payout wallet</label>
+            <input
+              id="new-wallet"
+              className="input mono text-[12.5px]"
+              value={newWallet}
+              onChange={(e) => setNewWallet(e.target.value)}
+              placeholder="0x…"
+            />
+          </div>
+          {walletError && (
+            <p className="m-0 text-xs" style={{ color: "var(--color-accent-700)" }}>
+              {walletError}
+            </p>
+          )}
+
           <SelfieCheckButton
             grantId={grantId}
             newWallet={newWallet}
             disabled={!walletValid}
             onAttested={setAttestation}
           />
-        ) : (
-          <div className="space-y-2">
-            <p className="text-xs text-accent">
-              Verified. Attestation valid until{" "}
-              {new Date(Number(attestation.deadline) * 1000).toLocaleTimeString()}.
-            </p>
-            <button className="btn-primary" onClick={applyChange} disabled={!isConnected || isPending}>
+
+          <button className="btn-secondary self-start font-body font-semibold" onClick={cancel}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {isGrantee && attestation && (
+        <div
+          className="animate-rise flex flex-col gap-2.5 rounded-[20px] px-4 py-3.5"
+          style={{ background: "color-mix(in srgb, var(--color-accent-2) 16%, transparent)" }}
+        >
+          <p className="m-0 text-[13.5px]">
+            <strong>Human verified.</strong>{" "}
+            {remaining === "expired" ? "Attestation expired — run the check again." : `Attestation valid for ${remaining}.`}
+          </p>
+          <p className="mono m-0 break-all text-[11px]" style={{ opacity: 0.7 }}>
+            → {shortAddress(attestation.newWallet, 12, 8)}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn-primary"
+              onClick={applyChange}
+              disabled={!isConnected || isPending || remaining === "expired"}
+            >
               {isPending ? "Confirming…" : "Apply change on-chain"}
             </button>
+            <button className="btn-secondary font-body font-semibold" onClick={cancel}>
+              Cancel
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {note && <p className="break-all text-xs text-muted">{note}</p>}
-      </div>
+      {note && (
+        <p className="m-0 break-all text-xs" style={{ opacity: 0.7 }}>
+          {note}
+        </p>
+      )}
     </section>
   );
 }

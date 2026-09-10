@@ -56,45 +56,58 @@ export function SelfieCheckRunner({
     }
   }, [idkit.isError, idkit]);
 
+  const waiting = idkit.isAwaitingUserConnection || idkit.isAwaitingUserConfirmation;
   const phase = idkit.isSuccess
-    ? "success"
+    ? "verified"
     : idkit.isError
-      ? "error"
+      ? "failed"
       : idkit.isAwaitingUserConfirmation
         ? "awaiting confirmation in World App"
         : idkit.isAwaitingUserConnection
-          ? "awaiting connection — scan the link below"
+          ? "scan to continue"
           : idkit.isOpen
             ? "starting…"
-            : "idle";
+            : "ready";
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-3.5">
       <div className="flex flex-wrap items-center gap-3">
         <button className="btn-primary" onClick={() => idkit.open()} disabled={idkit.isOpen && !idkit.isError}>
-          Run Selfie Check
+          Verify with Selfie Check
         </button>
-        <button className="btn-ghost" onClick={() => idkit.reset()}>
-          Reset
-        </button>
-        <span className="text-xs text-muted">
-          status: <span className="text-slate-200">{phase}</span>
-          {idkit.isInWorldApp && " · running inside World App"}
+        {(idkit.isOpen || idkit.isError) && (
+          <button className="btn-secondary font-body font-semibold" onClick={() => idkit.reset()}>
+            Reset
+          </button>
+        )}
+        <span className="flex items-center gap-2 text-xs" style={{ opacity: 0.65 }}>
+          {waiting && (
+            <span
+              className="animate-spin-ring h-3.5 w-3.5 flex-none rounded-full"
+              style={{
+                border: "2px solid color-mix(in srgb, var(--color-accent) 35%, transparent)",
+                borderTopColor: "var(--color-accent)",
+              }}
+              aria-hidden
+            />
+          )}
+          {phase}
+          {idkit.isInWorldApp && " · inside World App"}
         </span>
       </div>
 
-      {idkit.connectorURI && (
-        <div className="panel p-4">
+      {idkit.connectorURI && !idkit.isSuccess && (
+        <div className="card elev-sm animate-rise" style={{ padding: 18 }}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-            <QrCode value={idkit.connectorURI} size={200} />
+            <QrCode value={idkit.connectorURI} size={190} />
             <div className="min-w-0 flex-1">
-              <p className="label">Scan with World App</p>
-              <p className="mt-1 text-xs text-muted">
-                A link appearing here means World accepted the Selfie Check request for this App ID —
-                the credential is enabled. Scan to complete it on your phone.
+              <p className="m-0 font-heading text-[17px]">Scan with World App</p>
+              <p className="m-0 mt-1.5 text-[13px]" style={{ opacity: 0.7 }}>
+                A link appearing here means World accepted the Selfie Check request for this App ID — the credential is
+                enabled. Scan to complete it on your phone.
               </p>
-              <p className="mt-3 label">Connector link</p>
-              <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-slate-400">
+              <p className="kicker mt-3">Connector link</p>
+              <p className="mono m-0 mt-1 break-all text-[11px] leading-relaxed" style={{ opacity: 0.6 }}>
                 {idkit.connectorURI}
               </p>
             </div>
@@ -103,25 +116,40 @@ export function SelfieCheckRunner({
       )}
 
       {idkit.isError && (
-        <div className="panel border-danger/40 p-4">
-          <p className="label text-danger">Error code</p>
-          <p className="mt-1 font-mono text-sm text-danger">{idkit.errorCode ?? "unknown"}</p>
-          <p className="mt-2 text-xs text-muted">
-            <span className="text-slate-300">credential_unavailable</span> or{" "}
-            <span className="text-slate-300">feature_unavailable</span> means this app id is not
-            entitled to request Selfie Check — that is the server-side gate, and this code is what to
-            send to World support. Other codes are ordinary flow failures.
+        <div
+          className="animate-rise rounded-[22px] px-5 py-[18px]"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
+        >
+          <p className="kicker m-0">Error code</p>
+          <p className="mono m-0 mt-1 text-sm font-semibold" style={{ color: "var(--color-accent-700)" }}>
+            {idkit.errorCode ?? "unknown"}
+          </p>
+          <p className="m-0 mt-2 text-xs" style={{ opacity: 0.75 }}>
+            <span className="mono">credential_unavailable</span> or <span className="mono">feature_unavailable</span>{" "}
+            means this App ID is not entitled to request Selfie Check — that is the server-side gate, and this code is
+            what to send to World support. Other codes are ordinary flow failures.
           </p>
           {debugReport && (
-            <pre className="mt-3 max-h-64 overflow-auto rounded-md bg-ink p-3 text-xs text-muted">{debugReport}</pre>
+            <pre
+              className="mono mt-3 max-h-64 overflow-auto rounded-[16px] p-3 text-xs"
+              style={{ background: "color-mix(in srgb, var(--color-text) 6%, transparent)", opacity: 0.8 }}
+            >
+              {debugReport}
+            </pre>
           )}
         </div>
       )}
 
       {idkit.isSuccess && idkit.result && (
-        <div className="panel border-accent/40 p-4">
-          <p className="label text-accent">Proof received</p>
-          <pre className="mt-2 max-h-72 overflow-auto rounded-md bg-ink p-3 text-xs text-muted">
+        <div
+          className="animate-rise rounded-[22px] px-5 py-[18px]"
+          style={{ background: "color-mix(in srgb, var(--color-accent-2) 16%, transparent)" }}
+        >
+          <p className="m-0 font-heading text-base">Proof received</p>
+          <pre
+            className="mono mt-2 max-h-72 overflow-auto rounded-[16px] p-3 text-xs"
+            style={{ background: "color-mix(in srgb, var(--color-text) 6%, transparent)", opacity: 0.85 }}
+          >
             {JSON.stringify(idkit.result, null, 2)}
           </pre>
         </div>

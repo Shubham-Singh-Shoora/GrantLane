@@ -51,6 +51,7 @@ Two properties worth calling out:
 | Path | What it is |
 | --- | --- |
 | `apps/web` | Next.js 14 app — applicant + reviewer UI, and the server routes World requires |
+| `apps/web/app/globals.css` | The **Organic** design tokens — the source of truth for the look |
 | `contracts` | Foundry project — `GrantEscrow`, `ReceiverTemplate`, deploy script, 20 tests |
 | `cre-workflow` | CRE TypeScript workflow — the TEE handler that scores milestones |
 | `docs` | The two required hackathon write-ups |
@@ -184,6 +185,24 @@ and the deployer; the revert is purely a simulation artifact.
 gas token is USDC with **18 decimals** (`lib/chain.ts`), while the *escrowed ERC-20* is USDC with
 the usual **6 decimals** (`formatUsdc` in `lib/contracts.ts`). Native balances and escrow amounts
 must never be formatted with the same helper.
+
+### The look is token-driven
+
+The UI uses **Organic** — a warm cream/terracotta system (Caprasimo display, Figtree body, pill
+controls) imported from Claude Design. Every colour, radius and shadow is a CSS custom property in
+`apps/web/app/globals.css`; Tailwind's palette maps onto those variables in `tailwind.config.ts`
+rather than onto literals.
+
+Two consequences worth knowing:
+
+- **Dark mode is one attribute.** `[data-theme="dark"]` re-declares the same tokens, so there is no
+  `dark:` variant anywhere in the components. An inline script in `layout.tsx` applies the stored
+  choice before first paint — without it, a cream-to-near-black swap flashes badly.
+- **Retune the system in one file.** Changing `--color-accent` restyles buttons, tags, progress
+  bars, timeline nodes and the nav pill together.
+
+Milestone status colours live in `apps/web/lib/status.ts` so the grant-card dots, timeline nodes,
+milestone tags and review table can't drift apart.
 
 ### One `.env`, at the repo root
 

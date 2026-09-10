@@ -7,11 +7,14 @@ import {
   readGrant,
   readGrantCount,
   readMilestones,
-  MILESTONE_STATUS,
 } from "@/lib/contracts";
+import { shortAddress, statusName, statusTagClass } from "@/lib/status";
 import { SetupNotice } from "@/components/SetupNotice";
+import { ConfigDisclosure } from "@/components/ConfigDisclosure";
 
 export const dynamic = "force-dynamic";
+
+const ZERO = "0x0000000000000000000000000000000000000000";
 
 type MilestoneRow = {
   grantId: string;
@@ -63,12 +66,11 @@ async function loadBoard() {
   return { address, forwarder, attestor, expectedAuthor, rows, escrowed, released };
 }
 
-function Config({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="panel p-4">
-      <p className="label">{label}</p>
-      <p className="break-all font-mono text-xs text-slate-200">{value}</p>
-      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+    <div className="card elev-sm" style={{ padding: "18px 20px", gap: 2 }}>
+      <p className="card-kicker m-0">{label}</p>
+      <p className="m-0 font-heading text-[26px] leading-[1.15]">{value}</p>
     </div>
   );
 }
@@ -84,82 +86,64 @@ export default async function AdminPage() {
   const awaiting = board.rows.filter((r) => r.status === 1).length;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-lg font-semibold text-slate-100">Reviewer</h1>
-        <p className="mt-1 text-sm text-muted">
-          Reviewers do not score submissions here — the CRE workflow does that inside a TEE and the DON-signed report
-          settles it. This view is the audit trail: what is escrowed, what the workflow decided, and what it paid.
+    <div className="animate-rise">
+      <div className="pb-5 pt-6">
+        <h1 className="mb-2 text-[40px]">Review queue</h1>
+        <p className="m-0 max-w-[60ch] text-[15px]" style={{ opacity: 0.7 }}>
+          Nobody scores submissions here — the workflow does that inside a sealed enclave and its signed report settles
+          the payment. This page is the audit trail: what was escrowed, what the workflow decided, what it paid.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="panel p-4">
-          <p className="label">Total escrowed</p>
-          <p className="text-sm text-slate-100">{formatUsdc(board.escrowed)} USDC</p>
-        </div>
-        <div className="panel p-4">
-          <p className="label">Released</p>
-          <p className="text-sm text-slate-100">{formatUsdc(board.released)} USDC</p>
-        </div>
-        <div className="panel p-4">
-          <p className="label">Awaiting report</p>
-          <p className="text-sm text-slate-100">{awaiting}</p>
-        </div>
+      <div className="mb-5 grid gap-3.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
+        <Stat label="Total escrowed" value={`${formatUsdc(board.escrowed)} USDC`} />
+        <Stat label="Released" value={`${formatUsdc(board.released)} USDC`} />
+        <Stat label="Awaiting report" value={String(awaiting)} />
+        <Stat label="Milestones" value={String(board.rows.length)} />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Config label="GrantEscrow" value={board.address} />
-        <Config label="KeystoneForwarder" value={board.forwarder} hint="Only this address may deliver reports" />
-        <Config label="Attestor" value={board.attestor} hint="Signs verified Selfie Check attestations" />
-        <Config
-          label="Expected workflow owner"
-          value={board.expectedAuthor === "0x0000000000000000000000000000000000000000" ? "any" : board.expectedAuthor}
-          hint="Reports from other workflow owners are rejected when set"
-        />
-      </div>
-
-      <div className="panel overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-edge text-xs uppercase tracking-wide text-muted">
+      <div className="card elev-sm overflow-x-auto" style={{ padding: "6px 6px 2px", gap: 0 }}>
+        <table className="table" style={{ minWidth: 640 }}>
+          <thead>
             <tr>
-              <th className="px-4 py-3 font-medium">Grant</th>
-              <th className="px-4 py-3 font-medium">Milestone</th>
-              <th className="px-4 py-3 font-medium">Grantee</th>
-              <th className="px-4 py-3 font-medium">Amount</th>
-              <th className="px-4 py-3 font-medium">Score</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Evidence hash</th>
+              <th style={{ paddingLeft: 16 }}>Recipient</th>
+              <th>Milestone</th>
+              <th>Amount</th>
+              <th>Score</th>
+              <th>Status</th>
+              <th style={{ textAlign: "right", paddingRight: 16 }}>Evidence</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-edge">
+          <tbody>
             {board.rows.map((row) => (
-              <tr key={`${row.grantId}-${row.milestoneId}`} className="hover:bg-white/5">
-                <td className="px-4 py-3">
-                  <Link href={`/grant/${row.grantId}`} className="text-accent hover:underline">
-                    #{row.grantId}
+              <tr key={`${row.grantId}-${row.milestoneId}`}>
+                <td style={{ paddingLeft: 16 }}>
+                  <Link href={`/grant/${row.grantId}`} className="font-semibold" style={{ color: "var(--color-accent)" }}>
+                    Grant #{row.grantId}
                   </Link>
+                  <p className="mono m-0 mt-px text-xs" style={{ opacity: 0.55 }}>
+                    {shortAddress(row.grantee, 10, 6)}
+                  </p>
                 </td>
-                <td className="px-4 py-3 text-slate-300">{row.milestoneId + 1}</td>
-                <td className="px-4 py-3 font-mono text-xs text-muted">
-                  {row.grantee.slice(0, 10)}…{row.grantee.slice(-6)}
-                </td>
-                <td className="px-4 py-3 text-slate-200">
+                <td style={{ opacity: 0.8 }}>{row.milestoneId + 1}</td>
+                <td className="font-semibold">
                   {formatUsdc(row.amount)}
-                  {row.paidAmount > 0n && <span className="text-muted"> · {formatUsdc(row.paidAmount)} paid</span>}
+                  {row.paidAmount > 0n && (
+                    <span style={{ opacity: 0.55 }}> · {formatUsdc(row.paidAmount)} paid</span>
+                  )}
                 </td>
-                <td className="px-4 py-3 text-slate-300">
-                  {row.scoreBps > 0 ? `${(row.scoreBps / 100).toFixed(1)}%` : "—"}
+                <td style={{ opacity: 0.8 }}>{row.scoreBps > 0 ? `${(row.scoreBps / 100).toFixed(1)}%` : "—"}</td>
+                <td>
+                  <span className={statusTagClass(row.status)}>{statusName(row.status)}</span>
                 </td>
-                <td className="px-4 py-3 text-slate-300">{MILESTONE_STATUS[row.status] ?? "Unknown"}</td>
-                <td className="px-4 py-3 font-mono text-xs text-muted">
-                  {row.evidenceHash === `0x${"0".repeat(64)}` ? "—" : `${row.evidenceHash.slice(0, 18)}…`}
+                <td className="mono" style={{ textAlign: "right", paddingRight: 16, fontSize: 12, opacity: 0.6 }}>
+                  {row.evidenceHash === `0x${"0".repeat(64)}` ? "—" : `${row.evidenceHash.slice(0, 12)}…`}
                 </td>
               </tr>
             ))}
             {board.rows.length === 0 && (
               <tr>
-                <td className="px-4 py-6 text-sm text-muted" colSpan={7}>
+                <td colSpan={6} className="text-sm" style={{ padding: "24px 16px", opacity: 0.6 }}>
                   No milestones yet.
                 </td>
               </tr>
@@ -167,6 +151,19 @@ export default async function AdminPage() {
           </tbody>
         </table>
       </div>
+
+      <ConfigDisclosure
+        cards={[
+          { label: "GrantEscrow", value: board.address, hint: "Arc Testnet · chain 5042002" },
+          { label: "KeystoneForwarder", value: board.forwarder, hint: "Only this address may deliver reports" },
+          { label: "Attestor", value: board.attestor, hint: "Signs verified Selfie Check attestations" },
+          {
+            label: "Expected workflow owner",
+            value: board.expectedAuthor === ZERO ? "any" : board.expectedAuthor,
+            hint: "Reports from other workflow owners are rejected when set",
+          },
+        ]}
+      />
     </div>
   );
 }

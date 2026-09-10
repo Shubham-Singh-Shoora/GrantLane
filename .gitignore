@@ -35,3 +35,7 @@ cre-workflow/secrets.yaml
 cre-workflow/**/binary.wasm
 cre-workflow/**/dist/
 cre-workflow/**/.cre_build_tmp.js
+
+# local application store (file-backed, single-instance)
+apps/web/.data/
+.data/

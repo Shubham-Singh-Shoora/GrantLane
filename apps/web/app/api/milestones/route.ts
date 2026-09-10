@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { hashEvidence, startEvaluation } from "@/lib/cre";
 import { getEvidence, latestExecutionFor, putEvidence, type EvidenceBundle } from "@/lib/store";
 import { readMilestones } from "@/lib/contracts";
+import { readTicket } from "@/lib/verifications";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,6 +12,8 @@ type Body = {
   milestoneId?: number;
   summary?: string;
   artifacts?: string[];
+  /** Signed ticket from /api/verify-selfie with purpose "milestone". */
+  verificationTicket?: string;
 };
 
 /**
@@ -39,6 +42,22 @@ export async function POST(request: Request) {
   }
   if (typeof summary !== "string" || summary.trim().length === 0) {
     return NextResponse.json({ error: "missing_summary" }, { status: 400 });
+  }
+
+  // A milestone claim ends in money moving, so it gets the same treatment as an
+  // application: a server-signed ticket proving a live human made this claim.
+  const check = readTicket(body.verificationTicket, "milestone");
+  if (!check.ok) {
+    return NextResponse.json(
+      {
+        error: "human_verification_required",
+        detail:
+          check.reason === "expired"
+            ? "Your Selfie Check expired. Run it again before submitting."
+            : "Complete the Selfie Check before claiming this milestone.",
+      },
+      { status: 400 },
+    );
   }
 
   const draft = {

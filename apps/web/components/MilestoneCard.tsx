@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAccount, useWriteContract } from "wagmi";
 import { grantEscrowAbi, formatUsdc } from "@/lib/contracts";
 import { statusName, statusNodeColors, statusTagClass } from "@/lib/status";
+import { SelfieGate } from "./SelfieGate";
 
 export type MilestoneView = {
   milestoneId: number;
@@ -12,6 +13,9 @@ export type MilestoneView = {
   status: number;
   scoreBps: number;
   evidenceHash: string;
+  /** From the application the granter funded; the chain stores only amounts. */
+  title?: string;
+  criteria?: string;
 };
 
 type ExecutionView = {
@@ -48,6 +52,8 @@ export function MilestoneCard({
   const [execution, setExecution] = useState<ExecutionView | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Reset per milestone: a proof for one claim must not carry to the next.
+  const [humanVerified, setHumanVerified] = useState<string | null>(null);
 
   const canSubmit = milestone.status === 0 || milestone.status === 3;
   const scoring = milestone.status === 1;
@@ -88,6 +94,7 @@ export function MilestoneCard({
         body: JSON.stringify({
           grantId,
           milestoneId: milestone.milestoneId,
+          verificationTicket: humanVerified,
           summary,
           artifacts: artifacts
             .split("\n")
@@ -117,7 +124,7 @@ export function MilestoneCard({
     } finally {
       setSubmitting(false);
     }
-  }, [grantId, milestone.milestoneId, summary, artifacts, escrowAddress, writeContractAsync]);
+  }, [grantId, milestone.milestoneId, humanVerified, summary, artifacts, escrowAddress, writeContractAsync]);
 
   const scorePct = milestone.scoreBps / 100;
 
@@ -138,7 +145,9 @@ export function MilestoneCard({
           className="flex w-full items-center gap-3 px-5 py-[18px] text-left transition-colors hover:bg-[color-mix(in_srgb,var(--color-text)_4%,transparent)]"
         >
           <div className="min-w-0 flex-1">
-            <p className="m-0 font-heading text-[17px] leading-tight">Milestone {milestone.milestoneId + 1}</p>
+            <p className="m-0 font-heading text-[17px] leading-tight">
+              {milestone.title || `Milestone ${milestone.milestoneId + 1}`}
+            </p>
             <p className="m-0 mt-[3px] text-[12.5px]" style={{ opacity: 0.6 }}>
               {formatUsdc(BigInt(milestone.amount))} USDC
               {BigInt(milestone.paidAmount) > 0n && ` · ${formatUsdc(BigInt(milestone.paidAmount))} paid`}
@@ -158,10 +167,31 @@ export function MilestoneCard({
           <div className="animate-rise px-5 pb-5 pt-0.5">
             <div className="rule mb-4" />
 
+            {milestone.criteria && (
+              <div className="mb-4">
+                <p className="kicker m-0">What counts as done</p>
+                <p className="m-0 mt-1 whitespace-pre-wrap text-[13.5px]" style={{ opacity: 0.8 }}>
+                  {milestone.criteria}
+                </p>
+              </div>
+            )}
+
+            {/* — the human gate, before any evidence is accepted — */}
+            {isGrantee && canSubmit && !humanVerified && (
+              <SelfieGate
+                purpose="milestone"
+                signal={`milestone:${grantId}:${milestone.milestoneId}`}
+                title="Confirm you're claiming this yourself"
+                body="A milestone claim releases real money. A Selfie Check proves a live human is making it — not a script that got hold of a session."
+                verifiedLabel="You can now submit your evidence."
+                onVerified={setHumanVerified}
+              />
+            )}
+
             {/* — evidence composer — */}
-            {isGrantee && canSubmit && (
+            {isGrantee && canSubmit && humanVerified && (
               <div
-                className="flex flex-col gap-3 rounded-[22px] p-4"
+                className="animate-rise flex flex-col gap-3 rounded-[22px] p-4"
                 style={{ background: "color-mix(in srgb, var(--color-text) 4%, transparent)" }}
               >
                 <div className="field">

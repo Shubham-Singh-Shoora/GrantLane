@@ -6,6 +6,7 @@ import { Providers } from "./providers";
 import { WalletBadge } from "@/components/WalletBadge";
 import { NavTabs } from "@/components/NavTabs";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { RoleSwitch } from "@/components/RoleSwitch";
 
 const caprasimo = Caprasimo({
   weight: "400",
@@ -56,8 +57,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 WebkitBackdropFilter: "blur(14px)",
               }}
             >
-              <div className="mx-auto flex max-w-shell flex-wrap items-center gap-3.5 px-5 py-3.5">
-                <Link href="/" className="mr-auto flex items-center gap-2.5">
+              {/* One row on desktop; the nav is the first thing allowed to
+                  scroll horizontally rather than the whole bar wrapping. */}
+              <div className="mx-auto flex max-w-shell items-center gap-3 px-5 py-3">
+                <Link href="/" className="flex flex-none items-center gap-2.5">
                   <span
                     className="grid h-8 w-8 flex-none place-items-center rounded-full font-heading text-base leading-none"
                     style={{ background: "var(--color-accent)", color: "var(--color-bg)" }}
@@ -65,15 +68,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   >
                     G
                   </span>
-                  <span className="font-heading text-[19px] tracking-[-0.01em]">GrantLane</span>
+                  <span className="hidden font-heading text-[19px] tracking-[-0.01em] sm:inline">GrantLane</span>
                 </Link>
 
-                <NavTabs />
+                <div className="no-scrollbar min-w-0 flex-1 overflow-x-auto">
+                  <NavTabs />
+                </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-none items-center gap-2">
+                  <div className="hidden sm:block">
+                    <RoleSwitch />
+                  </div>
                   <ThemeToggle />
                   <WalletBadge />
                 </div>
+              </div>
+
+              {/* Below the sm breakpoint the role switch gets its own line
+                  rather than squeezing the wallet off the bar. */}
+              <div className="mx-auto flex max-w-shell px-5 pb-2.5 sm:hidden">
+                <RoleSwitch />
               </div>
             </header>
 

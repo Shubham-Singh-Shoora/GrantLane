@@ -327,6 +327,16 @@
     background: color-mix(in srgb, var(--color-text) 10%, transparent);
     overflow: hidden;
   }
+
+  /* Horizontal scroll without the bar — used on the header nav, where a visible
+     track cuts through the pill rail and looks like a rendering fault. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* — motion, matching the design canvas — */

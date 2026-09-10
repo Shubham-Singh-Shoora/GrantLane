@@ -39,8 +39,33 @@ export function worldAppId(): `app_${string}` {
   return appId as `app_${string}`;
 }
 
-export function worldAction(): string {
-  return process.env.NEXT_PUBLIC_WORLD_ACTION ?? "grantlane-payout-wallet";
+/**
+ * The three moments GrantLane asks for proof of a live human.
+ *
+ * Each gets its own action, so a proof gathered for one cannot be replayed at
+ * another: the action is hashed into the signed request, and World scopes the
+ * nullifier to it. A bot-farmed application proof is therefore useless for
+ * releasing a payout.
+ */
+export const WORLD_PURPOSES = {
+  application: "grantlane-application",
+  milestone: "grantlane-milestone",
+  "payout-wallet": "grantlane-payout-wallet",
+} as const;
+
+export type WorldPurpose = keyof typeof WORLD_PURPOSES;
+
+export function isWorldPurpose(value: string | null | undefined): value is WorldPurpose {
+  return value != null && Object.prototype.hasOwnProperty.call(WORLD_PURPOSES, value);
+}
+
+/** Resolves a purpose to its action id; falls back to the payout-wallet action. */
+export function worldAction(purpose: WorldPurpose = "payout-wallet"): string {
+  const base = process.env.NEXT_PUBLIC_WORLD_ACTION;
+  // A single configured action overrides the split, for portals where actions
+  // must be pre-registered one by one.
+  if (base && process.env.WORLD_SINGLE_ACTION === "true") return base;
+  return WORLD_PURPOSES[purpose];
 }
 
 export function worldRpId(): string {

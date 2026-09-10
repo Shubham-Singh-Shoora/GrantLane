@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { grantEscrowAddress, readGrant, readMilestones } from "@/lib/contracts";
 import { GrantDetail } from "@/components/GrantDetail";
 import { SetupNotice } from "@/components/SetupNotice";
+import { milestonesForGrant } from "@/lib/applications";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export default async function GrantPage({ params }: { params: { id: string } }) 
   try {
     const escrowAddress = grantEscrowAddress();
     const [grant, milestones] = await Promise.all([readGrant(grantId), readMilestones(grantId)]);
+    const metadata = milestonesForGrant(params.id);
 
     return (
       <GrantDetail
@@ -34,6 +36,10 @@ export default async function GrantPage({ params }: { params: { id: string } }) 
           status: Number(m.status),
           scoreBps: Number(m.scoreBps),
           evidenceHash: m.evidenceHash,
+          // Titles and criteria live off-chain in the funded application; the
+          // contract only ever knew the amounts.
+          title: metadata?.[i]?.title,
+          criteria: metadata?.[i]?.criteria,
         }))}
       />
     );

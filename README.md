@@ -267,9 +267,12 @@ against the shipped packages rather than assumed:
 
 ## Known gaps
 
-- **The scoring function is keyword matching, not judgement.** It is deterministic, which the TEE
-  requires, but it is a placeholder for a real evaluator. The interesting property being
-  demonstrated is *where* the scoring runs, not how clever it is.
+- **The scoring function is keyword matching — treat every score it produces as meaningless.** It
+  checks whether the word before each colon in the rubric appears anywhere in the submission, so
+  typing "pull request, tests, demo, docs" scores 100%. What the build demonstrates is *where*
+  judgement runs (sealed, verdict-only) and that only a DON-signed report can move money — not the
+  judgement itself. [docs/scoring-design.md](docs/scoring-design.md) is the plan to fix it:
+  verifiable checks against real sources, then model judgement, then the granter's final call.
 - **`lib/store.ts` is in-memory.** Evidence bundles and execution records do not survive a restart
   and are per-isolate on serverless. Chain state is unaffected.
 - **CRE execution polling is best-effort.** There is no stable public REST endpoint for reading an

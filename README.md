@@ -221,18 +221,23 @@ Two consequences worth knowing:
 Milestone status colours live in `apps/web/lib/status.ts` so the grant-card dots, timeline nodes,
 milestone tags and review table can't drift apart.
 
-### One `.env`, at the repo root
+### Two env files, on purpose
 
-Next.js only reads `.env` from its own directory, but the contracts and the workflow want the same
-values. `apps/web/load-env.mjs` bridges that: `next.config.mjs` imports it, so the root `.env` is
-loaded for both `dev` and `build`. It handles inline `# comments`, quotes and `export` prefixes, and
-never overrides a variable already set in the environment.
+| File | Read by | Contains |
+| --- | --- | --- |
+| `apps/web/.env.local` | Next.js, via its own loading | Only what the web app uses |
+| `.env` (repo root) | Foundry and the CRE CLI | Deploy keys, RPC, workflow settings |
 
-You should see this on startup:
+The web app used to read the root `.env` through a custom loader. That loader is gone: a deployment
+gets its variables from the host's project settings, so bridging to a file outside the project
+directory bought nothing and only obscured where values came from.
 
-```
-[grantlane] loaded env from D:\...\GrantLane\.env
-```
+Four values appear in both files and must be kept in step — `NEXT_PUBLIC_GRANT_ESCROW_ADDRESS`,
+`NEXT_PUBLIC_USDC_ADDRESS`, `NEXT_PUBLIC_ARC_RPC_URL`/`ARC_RPC_URL`, and the attestor key. Change
+the escrow address in one and the other will keep pointing at the old contract.
+
+Both are gitignored. `.env.example` documents every variable; `DEPLOYMENT.md` lists the subset to
+set on the host.
 
 ---
 

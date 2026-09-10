@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { GranterOnly } from "@/components/GranterOnly";
 import {
   formatUsdc,
   grantEscrowAddress,
@@ -86,6 +87,7 @@ export default async function AdminPage() {
   const awaiting = board.rows.filter((r) => r.status === 1).length;
 
   return (
+    <GranterOnly>
     <div className="animate-rise">
       <div className="pb-5 pt-6">
         <h1 className="mb-2 text-[40px]">Review queue</h1>
@@ -165,5 +167,6 @@ export default async function AdminPage() {
         ]}
       />
     </div>
+    </GranterOnly>
   );
 }

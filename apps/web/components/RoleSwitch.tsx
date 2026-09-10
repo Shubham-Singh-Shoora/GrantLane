@@ -1,39 +1,24 @@
 "use client";
 
-import { useRole, type Role } from "./RoleProvider";
+import { useRole } from "./RoleProvider";
 
-const OPTIONS: { value: Role; label: string }[] = [
-  { value: "applicant", label: "Applicant" },
-  { value: "granter", label: "Granter" },
-];
-
+/**
+ * Shows which side you're on. Not a control — the role follows your wallet.
+ *
+ * Only rendered for granters: an applicant has no second view to be told about,
+ * and a badge saying "Applicant" on every page is noise.
+ */
 export function RoleSwitch() {
-  const { role, setRole, ready } = useRole();
+  const { isGranter } = useRole();
+
+  if (!isGranter) return null;
 
   return (
-    <div
-      className="flex gap-[3px] rounded-full p-[3px]"
-      title="Switches which side of the grant you are viewing. Actions are still authorised by your wallet."
-      style={{ background: "color-mix(in srgb, var(--color-text) 6%, transparent)" }}
+    <span
+      className="tag tag-accent-2 whitespace-nowrap"
+      title="This wallet is on the granter allowlist, so the review queue is visible to you."
     >
-      {OPTIONS.map((option) => {
-        const active = ready && role === option.value;
-        return (
-          <button
-            key={option.value}
-            onClick={() => setRole(option.value)}
-            aria-pressed={active}
-            className="whitespace-nowrap rounded-full px-3 py-1 text-xs transition-colors"
-            style={
-              active
-                ? { background: "var(--color-surface)", color: "var(--color-text)", boxShadow: "var(--shadow-sm)" }
-                : { color: "color-mix(in srgb, var(--color-text) 60%, transparent)" }
-            }
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
+      Granter
+    </span>
   );
 }

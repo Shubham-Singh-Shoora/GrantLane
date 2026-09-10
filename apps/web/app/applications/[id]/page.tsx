@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { GranterOnly } from "@/components/GranterOnly";
 import { notFound } from "next/navigation";
 import { formatUnits } from "viem";
 import { getApplication } from "@/lib/applications";
@@ -39,6 +40,7 @@ export default function ApplicationDetailPage({
   }
 
   return (
+    <GranterOnly>
     <div className="animate-rise">
       <Link href="/applications" className="btn-ghost mb-2.5 mt-4 inline-flex" style={{ paddingLeft: 0 }}>
         ← All applications
@@ -181,5 +183,6 @@ export default function ApplicationDetailPage({
         </aside>
       </div>
     </div>
+    </GranterOnly>
   );
 }

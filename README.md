@@ -150,6 +150,17 @@ in addition to `NEXT_PUBLIC_WORLD_APP_ID`. The browser fetches a fresh context f
 
 **Selfie Check entitlement is server-side, per App ID.** The SDK type still says "currently in preview", but that is stale docstring text — it cannot know your entitlement. Visit `/verify` to find out: a QR means the App ID is enabled, and `credential_unavailable`/`feature_unavailable` means it is not.
 
+**Granter access is an allowlist.** `NEXT_PUBLIC_GRANTER_ADDRESSES` (comma-separated) decides which
+wallets see the review queue. Connect one and the Applications and Audit tabs appear; connect
+anything else and you only ever see the applicant side.
+
+That gate is **UI segregation, not authorisation**. The money is already safe without it — escrowing
+spends the funder's own USDC, releasing needs a DON-signed report, and submitting evidence is
+restricted to the grantee, all enforced by the contract. What the allowlist protects is the
+off-chain review surface, and a determined caller can still reach `/api/applications` directly
+because the server cannot authenticate a wallet without a signature. Closing that properly means
+sign-in-with-Ethereum. See `apps/web/lib/access.ts`.
+
 **Arc Testnet values**, all verified against live sources:
 
 | | |
@@ -160,10 +171,12 @@ in addition to `NEXT_PUBLIC_WORLD_APP_ID`. The browser fetches a fresh context f
 | KeystoneForwarder | `0x76c9cf548b4179F8901cda1f8623568b58215E62` |
 | Native gas token | USDC at **18 decimals** |
 | Escrow ERC-20 (USDC) | `0x3600000000000000000000000000000000000000`, **6 decimals** |
-| GrantEscrow (deployed) | `0x85AC2a3e1EBc0959599025eB6eF36eD34c862840` |
+| GrantEscrow (deployed) | `0xCd84686B7fCc4bC120c0Bfb5e97a92bb9fbEc994` |
 
-Deploy tx `0xd3441328d55241861bcb355424301669306e8cfe7918bd9612b8f1388d9b7697`
-(block 61237469, 2,090,602 gas).
+The first deployment — `0x85AC2a3e…c862840`, deploy tx `0xd344…7697` — is still on-chain and is what's
+referenced in [docs/cre-evidence/live-payout-run.md](docs/cre-evidence/live-payout-run.md). The app now
+points at a fresh escrow so the grant list starts empty; the old one remains as immutable evidence of
+the live payout.
 
 ### `forge script` cannot send USDC transactions on Arc
 

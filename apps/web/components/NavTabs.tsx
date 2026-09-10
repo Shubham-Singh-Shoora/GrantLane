@@ -6,25 +6,22 @@ import { useRole } from "./RoleProvider";
 
 type Tab = { href: string; label: string; match?: string[] };
 
-const APPLICANT_TABS: Tab[] = [
+const BASE_TABS: Tab[] = [
   { href: "/", label: "Home" },
   { href: "/apply", label: "Apply" },
-  { href: "/grants", label: "My grants", match: ["/grants", "/grant"] },
-  { href: "/verify", label: "Verify" },
+  { href: "/grants", label: "Grants", match: ["/grants", "/grant"] },
 ];
 
+/** Only a wallet on the allowlist ever sees these. */
 const GRANTER_TABS: Tab[] = [
-  { href: "/", label: "Home" },
   { href: "/applications", label: "Applications" },
-  { href: "/grants", label: "Grants", match: ["/grants", "/grant"] },
   { href: "/admin", label: "Audit" },
 ];
 
-/** The pill rail from the design: one recessed track, the active tab filled. */
 export function NavTabs() {
   const pathname = usePathname();
-  const { role } = useRole();
-  const tabs = role === "granter" ? GRANTER_TABS : APPLICANT_TABS;
+  const { isGranter } = useRole();
+  const tabs = isGranter ? [...BASE_TABS, ...GRANTER_TABS] : BASE_TABS;
 
   return (
     <nav

@@ -7,6 +7,7 @@ import { WalletBadge } from "@/components/WalletBadge";
 import { NavTabs } from "@/components/NavTabs";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { RoleSwitch } from "@/components/RoleSwitch";
+import { Logo } from "@/components/Logo";
 
 const caprasimo = Caprasimo({
   weight: "400",
@@ -61,13 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   scroll horizontally rather than the whole bar wrapping. */}
               <div className="mx-auto flex max-w-shell items-center gap-3 px-5 py-3">
                 <Link href="/" className="flex flex-none items-center gap-2.5">
-                  <span
-                    className="grid h-8 w-8 flex-none place-items-center rounded-full font-heading text-base leading-none"
-                    style={{ background: "var(--color-accent)", color: "var(--color-bg)" }}
-                    aria-hidden
-                  >
-                    G
-                  </span>
+                  <Logo size={34} />
                   <span className="hidden font-heading text-[19px] tracking-[-0.01em] sm:inline">GrantLane</span>
                 </Link>
 

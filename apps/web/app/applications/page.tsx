@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { GranterOnly } from "@/components/GranterOnly";
 import { formatUnits } from "viem";
 import { listApplications, type Application } from "@/lib/applications";
 
@@ -23,6 +24,7 @@ export default function ApplicationsPage() {
   const needsReview = applications.filter((a) => a.status === "submitted").length;
 
   return (
+    <GranterOnly>
     <div className="animate-rise">
       <div className="flex flex-wrap items-end gap-4 pb-5 pt-6">
         <div className="min-w-0 flex-1 basis-[320px]">
@@ -45,7 +47,7 @@ export default function ApplicationsPage() {
         >
           <h4 className="m-0">No applications yet</h4>
           <p className="m-0 max-w-[44ch] text-sm" style={{ opacity: 0.7 }}>
-            Switch to the applicant role and submit one — you&apos;ll need to pass a Selfie Check, same as anyone else.
+            Applications appear here once someone submits one. Every applicant passes a Selfie Check first.
           </p>
           <Link href="/apply" className="btn-primary mt-1.5">
             Apply for a grant
@@ -103,5 +105,6 @@ export default function ApplicationsPage() {
         </>
       )}
     </div>
+    </GranterOnly>
   );
 }

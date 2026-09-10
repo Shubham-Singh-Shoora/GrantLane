@@ -7,6 +7,7 @@ import { useAccount } from "wagmi";
 import type { RepoSnapshot } from "@/lib/applications";
 import { GithubRepoCard } from "./GithubRepoCard";
 import { SelfieGate } from "./SelfieGate";
+import { clearTicket } from "@/lib/ticket-cache";
 
 type DraftMilestone = { title: string; criteria: string; amount: string };
 
@@ -105,6 +106,7 @@ export function ApplicationForm() {
         setError(payload.detail ?? payload.error ?? "Could not submit the application.");
         return;
       }
+      clearTicket("application");
       router.push(`/applications/${payload.application.id}?submitted=1`);
     } catch (cause) {
       setError(String(cause));
@@ -327,6 +329,7 @@ export function ApplicationForm() {
       <SelfieGate
         purpose="application"
         signal={`application:${projectName.trim()}`}
+        cacheKey="application"
         title="Confirm you're a real person"
         body="Grant rounds attract bots faster than they attract builders. A Selfie Check proves a live human filled this in, without telling us who you are. One verified person, one application."
         verifiedLabel="Your application can now be submitted."

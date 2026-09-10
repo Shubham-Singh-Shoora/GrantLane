@@ -24,8 +24,26 @@ type Body = {
   verificationTicket?: string;
 };
 
-export async function GET() {
-  return NextResponse.json({ applications: await listApplications() }, { headers: { "Cache-Control": "no-store" } });
+/**
+ * `?wallet=0x…` narrows the response to that wallet's applications, which is
+ * what the applicant's own view asks for.
+ *
+ * Narrowing, not authorisation — the wallet is supplied by the caller and the
+ * server cannot prove it belongs to them without a signature. It stops an
+ * applicant's page incidentally carrying everyone else's proposals; it does not
+ * stop someone asking for a wallet that isn't theirs. Same caveat as the granter
+ * allowlist: see lib/access.ts.
+ */
+export async function GET(request: Request) {
+  const wallet = new URL(request.url).searchParams.get("wallet");
+  const all = await listApplications();
+
+  const applications =
+    wallet && isAddress(wallet)
+      ? all.filter((a) => a.wallet.toLowerCase() === wallet.toLowerCase())
+      : all;
+
+  return NextResponse.json({ applications }, { headers: { "Cache-Control": "no-store" } });
 }
 
 /**

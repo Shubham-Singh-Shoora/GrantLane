@@ -9,6 +9,7 @@ type Tab = { href: string; label: string; match?: string[] };
 const BASE_TABS: Tab[] = [
   { href: "/", label: "Home" },
   { href: "/apply", label: "Apply" },
+  { href: "/my", label: "My applications", match: ["/my", "/applications"] },
   { href: "/grants", label: "Grants", match: ["/grants", "/grant"] },
 ];
 

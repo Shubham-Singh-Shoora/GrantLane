@@ -71,9 +71,14 @@ export async function startEvaluation(request: EvaluationRequest): Promise<Execu
   };
 
   if (!url) {
+    // Not a failure: the evidence is stored and mirrored on-chain, and the
+    // milestone is legitimately awaiting a report. Saying so plainly beats an
+    // error the reader has to decode.
     const record: ExecutionRecord = {
       ...base,
-      error: "CRE_TRIGGER_URL is not set; evidence stored but no workflow run started.",
+      error:
+        "Waiting for a scoring workflow. Start one locally with `npm run workflow:listen` " +
+        "and set CRE_TRIGGER_URL, or deploy the workflow once CRE deploy access is enabled.",
     };
     await putExecution(record);
     return record;
@@ -86,11 +91,17 @@ export async function startEvaluation(request: EvaluationRequest): Promise<Execu
         "Content-Type": "application/json",
         ...(process.env.CRE_TRIGGER_AUTH ? { Authorization: process.env.CRE_TRIGGER_AUTH } : {}),
       },
+      // The HTTP trigger takes the workflow's payload nested under `input` —
+      // both the deployed trigger and `cre workflow simulate --listen` expect
+      // {"input": {...}}, and posting the bare object silently trips the
+      // handler's own validation instead.
       body: JSON.stringify({
-        grantId: request.grantId,
-        milestoneId: request.milestoneId,
-        evidence: request.evidence,
-        payoutAmount: request.payoutAmount.toString(),
+        input: {
+          grantId: request.grantId,
+          milestoneId: request.milestoneId,
+          evidence: request.evidence,
+          payoutAmount: request.payoutAmount.toString(),
+        },
       }),
       cache: "no-store",
     });

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { IDKitResult } from "@worldcoin/idkit-core";
 import { SelfieCheckRunner, type IDKitContext } from "./SelfieCheckRunner";
+import { loadTicket, saveTicket, ticketSecondsLeft } from "@/lib/ticket-cache";
 
 export type SelfiePurpose = "application" | "milestone" | "payout-wallet";
 
@@ -24,6 +25,7 @@ export function SelfieGate({
   title,
   body,
   verifiedLabel,
+  cacheKey,
   onVerified,
 }: {
   purpose: SelfiePurpose;
@@ -31,12 +33,26 @@ export function SelfieGate({
   title: string;
   body: string;
   verifiedLabel?: string;
+  /** Scopes the cached ticket. Omit to require a fresh check every time. */
+  cacheKey?: string;
   onVerified: (verificationTicket: string) => void;
 }) {
   const [context, setContext] = useState<IDKitContext | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [verified, setVerified] = useState(false);
+  const [restoredFor, setRestoredFor] = useState<number | null>(null);
+
+  // A ticket from a few minutes ago is still good. Reuse it rather than making
+  // someone redo a face scan because the last submit failed downstream.
+  useEffect(() => {
+    if (!cacheKey) return;
+    const cached = loadTicket(cacheKey);
+    if (!cached) return;
+    setVerified(true);
+    setRestoredFor(ticketSecondsLeft(cached));
+    onVerified(cached);
+  }, [cacheKey, onVerified]);
 
   const begin = useCallback(async () => {
     setLoading(true);
@@ -72,12 +88,13 @@ export function SelfieGate({
         }
         setVerified(true);
         setStatus(null);
+        if (cacheKey) saveTicket(cacheKey, payload.ticket as string);
         onVerified(payload.ticket as string);
       } catch (cause) {
         setStatus(`Verification failed: ${String(cause)}`);
       }
     },
-    [purpose, onVerified],
+    [purpose, cacheKey, onVerified],
   );
 
   if (verified) {
@@ -95,6 +112,10 @@ export function SelfieGate({
         </span>
         <p className="m-0 text-[13.5px]">
           <strong>Human verified.</strong> {verifiedLabel ?? "You can continue."}
+          {restoredFor !== null && restoredFor > 0 && (
+            <span style={{ opacity: 0.7 }}>{" "}Reusing your check from a moment ago — valid for another{" "}
+              {Math.ceil(restoredFor / 60)} min.</span>
+          )}
         </p>
       </div>
     );

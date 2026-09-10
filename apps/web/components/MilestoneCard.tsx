@@ -5,6 +5,7 @@ import { useAccount, useWriteContract } from "wagmi";
 import { grantEscrowAbi, formatUsdc } from "@/lib/contracts";
 import { statusName, statusNodeColors, statusTagClass } from "@/lib/status";
 import { SelfieGate } from "./SelfieGate";
+import { clearTicket } from "@/lib/ticket-cache";
 
 export type MilestoneView = {
   milestoneId: number;
@@ -117,6 +118,8 @@ export function MilestoneCard({
         args: [BigInt(grantId), BigInt(milestone.milestoneId), body.evidenceHash],
       });
 
+      // The claim landed — that ticket is spent, so do not offer it again.
+      clearTicket(`milestone:${grantId}:${milestone.milestoneId}`);
       setExecution(body.execution as ExecutionView);
       setNote("Evidence submitted. Scoring in progress.");
     } catch (cause) {
@@ -181,6 +184,7 @@ export function MilestoneCard({
               <SelfieGate
                 purpose="milestone"
                 signal={`milestone:${grantId}:${milestone.milestoneId}`}
+                cacheKey={`milestone:${grantId}:${milestone.milestoneId}`}
                 title="Confirm you're claiming this yourself"
                 body="A milestone claim releases real money. A Selfie Check proves a live human is making it — not a script that got hold of a session."
                 verifiedLabel="You can now submit your evidence."

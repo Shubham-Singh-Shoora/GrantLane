@@ -6,6 +6,7 @@ import { erc20Abi, formatUnits, parseUnits, type Address } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import type { Application, ProposedMilestone } from "@/lib/applications";
 import { grantEscrowAbi } from "@/lib/contracts";
+import { useRole } from "./RoleProvider";
 
 type Draft = { title: string; criteria: string; amount: string };
 
@@ -49,6 +50,7 @@ export function ReviewPanel({
 }) {
   const router = useRouter();
   const { address, isConnected } = useAccount();
+  const { isGranter } = useRole();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
 
@@ -170,6 +172,66 @@ export function ReviewPanel({
 
   const decided = application.status === "approved" || application.status === "funded";
   const funded = application.status === "funded";
+
+  // The applicant can open this page too — they should see where their
+  // application stands, never the controls that decide it.
+  if (!isGranter) {
+    const STAGES = [
+      { key: "submitted", label: "Submitted", body: "Your application is in the review queue." },
+      { key: "approved", label: "Scope agreed", body: "The granter has settled which milestones they'll fund." },
+      { key: "funded", label: "Escrowed on Arc", body: "The money is locked. You can start claiming milestones." },
+    ] as const;
+    const reachedIndex = STAGES.findIndex((s) => s.key === application.status);
+
+    return (
+      <section className="card elev-sm" style={{ padding: 22, gap: 16 }}>
+        <h4 className="m-0">Where this stands</h4>
+
+        {application.status === "declined" ? (
+          <p className="m-0 text-[13.5px]" style={{ opacity: 0.8 }}>
+            This application was declined. If the granter left a note it&apos;s shown above.
+          </p>
+        ) : (
+          <ol className="m-0 flex list-none flex-col gap-3 p-0">
+            {STAGES.map((stage, i) => {
+              const done = reachedIndex >= i;
+              return (
+                <li key={stage.key} className="flex items-start gap-3">
+                  <span
+                    className="mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-full text-[11px] font-bold"
+                    style={{
+                      background: done ? "var(--color-accent-2)" : "color-mix(in srgb, var(--color-text) 10%, transparent)",
+                      color: done ? "var(--color-bg)" : "color-mix(in srgb, var(--color-text) 55%, transparent)",
+                    }}
+                  >
+                    {done ? "✓" : i + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="m-0 text-[14px] font-semibold" style={{ opacity: done ? 1 : 0.6 }}>
+                      {stage.label}
+                    </p>
+                    <p className="m-0 mt-0.5 text-[12.5px]" style={{ opacity: 0.7 }}>
+                      {stage.body}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        {funded && application.grantId && (
+          <a href={`/grant/${application.grantId}`} className="btn-primary self-start">
+            Open grant #{application.grantId}
+          </a>
+        )}
+
+        <p className="m-0 text-[12px]" style={{ opacity: 0.6 }}>
+          This page checks for updates on its own — leave it open, or come back any time.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="card elev-sm" style={{ padding: 22, gap: 16 }}>

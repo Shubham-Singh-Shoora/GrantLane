@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isAddress } from "viem";
 import {
   createApplication,
-  findByNullifier,
+  findOpenByNullifier,
   listApplications,
   type ProposedMilestone,
 } from "@/lib/applications";
@@ -95,9 +95,14 @@ export async function POST(request: Request) {
   }
 
   const nullifierHash = check.nullifierHash;
-  if (await findByNullifier(nullifierHash)) {
+  const open = await findOpenByNullifier(nullifierHash);
+  if (open) {
     return NextResponse.json(
-      { error: "already_applied", detail: "This World ID has already submitted an application." },
+      {
+        error: "already_applied",
+        detail: `You already have an application in progress ("${open.projectName}"). You can apply again once it's funded or declined.`,
+        applicationId: open.id,
+      },
       { status: 409 },
     );
   }

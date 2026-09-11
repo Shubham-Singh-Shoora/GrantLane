@@ -113,9 +113,16 @@ export async function getApplicationByGrantId(grantId: string): Promise<Applicat
   return (await load()).find((a) => a.grantId === grantId);
 }
 
-/** One verified human gets one open application — the anti-bot rule. */
-export async function findByNullifier(nullifierHash: string): Promise<Application | undefined> {
-  return (await load()).find((a) => a.nullifierHash === nullifierHash);
+/**
+ * The anti-bot rule: one verified human gets one *open* application — one still
+ * awaiting a decision or awaiting funding. Once it's declined or funded, the same
+ * person can apply again (a new round, a new project). Without that, a World ID
+ * nullifier being stable per person would mean one application per person, ever.
+ */
+export async function findOpenByNullifier(nullifierHash: string): Promise<Application | undefined> {
+  return (await load()).find(
+    (a) => a.nullifierHash === nullifierHash && (a.status === "submitted" || a.status === "approved"),
+  );
 }
 
 export async function createApplication(

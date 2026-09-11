@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {GrantEscrow} from "../src/GrantEscrow.sol";
 import {IOptimisticOracleV3} from "../src/interfaces/IOptimisticOracleV3.sol";
 import {IMockOracleAncillary, UmaSandbox} from "../script/UmaSandbox.sol";
+import {SettlementReceiver} from "../src/automation/SettlementReceiver.sol";
 
 /// @notice GrantEscrow against the real UMA Optimistic Oracle V3 and Circle USDC on a
 ///         Base Sepolia fork. Skipped unless BASE_SEPOLIA_RPC_URL is set.
@@ -21,6 +22,9 @@ contract GrantEscrowForkTest is Test {
         "MilestoneClaim(uint256 grantId,uint256 milestoneId,bytes32 evidenceHash,bytes32 nullifierHash,uint256 nonce,uint256 deadline)"
     );
 
+    /// @dev Perform gas limit the Base Sepolia upkeep is registered with. A full batch
+    ///      measured ~581k through the real oracle, so this leaves ~1.7x headroom.
+    uint256 constant UPKEEP_GAS_LIMIT = 1_000_000;
     uint64 constant LIVENESS = 300;
     uint256 constant BOND = 1e6;
     uint256 constant BURN = BOND / 2;
@@ -163,5 +167,55 @@ contract GrantEscrowForkTest is Test {
         assertEq(_status(0), uint8(GrantEscrow.MilestoneStatus.Approved));
         assertEq(_status(1), uint8(GrantEscrow.MilestoneStatus.Approved));
         assertEq(escrow.pendingWithdrawals(grantee), M0 + M1);
+    }
+
+    /// @dev The CRE path: the workflow reads checkUpkeep off-chain and its report — the
+    ///      performData itself — reaches performUpkeep through the SettlementReceiver.
+    function test_fork_creReportSettlesThroughReceiver() public {
+        address forwarder = makeAddr("fork-forwarder");
+        SettlementReceiver receiver = new SettlementReceiver(forwarder, escrow);
+
+        _submit(0);
+        vm.warp(block.timestamp + LIVENESS);
+        (bool needed, bytes memory performData) = escrow.checkUpkeep("");
+        assertTrue(needed);
+
+        bytes memory metadata =
+            abi.encodePacked(bytes32(uint256(1)), bytes10("settlement"), bytes20(address(0xBEEF)), bytes2(0x0001));
+        vm.prank(forwarder);
+        receiver.onReport(metadata, performData);
+
+        assertEq(_status(0), uint8(GrantEscrow.MilestoneStatus.Approved));
+        assertEq(escrow.pendingWithdrawals(grantee), M0);
+    }
+
+    /// @dev The upkeep is registered with a fixed perform gas limit; a full batch through
+    ///      the real oracle has to fit inside it or Automation would stall on busy days.
+    function test_fork_fullUpkeepBatchFitsRegisteredGasLimit() public {
+        uint256 batch = escrow.MAX_SETTLE_BATCH();
+        uint128[] memory amounts = new uint128[](batch);
+        for (uint256 i = 0; i < batch; ++i) {
+            amounts[i] = 1e6;
+        }
+        vm.prank(funder);
+        grantId = escrow.createGrant(grantee, amounts, keccak256("batch terms"));
+        deal(address(USDC), grantee, batch * BOND);
+        for (uint256 i = 0; i < batch; ++i) {
+            _submit(i);
+        }
+        vm.warp(block.timestamp + LIVENESS);
+
+        (bool needed, bytes memory data) = escrow.checkUpkeep("");
+        assertTrue(needed);
+        assertEq(abi.decode(data, (bytes32[])).length, batch, "one full batch");
+
+        vm.prank(keeper);
+        uint256 before = gasleft();
+        escrow.performUpkeep(data);
+        uint256 used = before - gasleft();
+
+        emit log_named_uint("performUpkeep gas, full batch", used);
+        assertLt(used, UPKEEP_GAS_LIMIT, "fits the registered gas limit");
+        assertEq(escrow.awaitingSettlement().length, 0, "all settled");
     }
 }

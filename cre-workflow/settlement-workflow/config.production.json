@@ -1,0 +1,9 @@
+{
+  "schedule": "0 */1 * * * *",
+  "evm": {
+    "chainSelectorName": "ethereum-testnet-sepolia-base-1",
+    "grantEscrowAddress": "0x85AC2a3e1EBc0959599025eB6eF36eD34c862840",
+    "settlementReceiverAddress": "0x5c7f09FDf7bC860AF7F0C5EcBD220B3391583a95",
+    "gasLimit": "1000000"
+  }
+}

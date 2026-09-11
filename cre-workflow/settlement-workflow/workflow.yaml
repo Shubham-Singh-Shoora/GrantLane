@@ -1,0 +1,29 @@
+# ==========================================================================
+# CRE WORKFLOW SETTINGS — GrantLane settlement
+# ==========================================================================
+# Keyed by target; overrides project.yaml values.
+#
+# staging-settings is what `cre workflow simulate --broadcast` uses: writes go
+# through Base Sepolia's MockKeystoneForwarder. production-settings is for a
+# workflow deployed to a DON, once deploy access is granted; the receiver must
+# then be pointed at the production KeystoneForwarder (setForwarderAddress).
+# ==========================================================================
+
+staging-settings:
+  user-workflow:
+    workflow-name: "grantlane-settlement-staging"
+    deployment-registry: "private"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.json"
+    secrets-path: ""
+
+# ==========================================================================
+production-settings:
+  user-workflow:
+    workflow-name: "grantlane-settlement"
+    deployment-registry: "private"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.production.json"
+    secrets-path: ""

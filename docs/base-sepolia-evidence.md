@@ -40,6 +40,28 @@ Milestone 0 went undisputed: once its window closed it settled true, UMA returne
 - **Testnet stand-in:** the dispute was answered through UMA's sandbox oracle (`MockOracleAncillary`), which on testnets takes the place of UMA's token-holder vote. On Base mainnet the same dispute would go to that vote.
 - **CLI shortcut:** these claims were sent with [`script/Demo.s.sol`](../contracts/script/Demo.s.sol), which signs the Selfie Check attestation directly with the attestor key. In the web app that signature is only issued after a real World ID Selfie Check is verified. This run exercises the contract, not the Selfie Check.
 
+## Settlement by a CRE workflow
+
+Chainlink Automation's testnet service was sunset on June 24, 2026, and its Base Sepolia registry has stopped performing upkeeps. So settlement runs as a Chainlink CRE cron workflow, [`cre-workflow/settlement-workflow`](../cre-workflow/settlement-workflow/main.ts), following Chainlink's Automation-to-CRE migration path. On each tick it reads `checkUpkeep` from the escrow. If claims have outlived their dispute window, it signs a report whose payload is the escrow's own `performData`, and the forwarder delivers it to a [`SettlementReceiver`](../contracts/src/automation/SettlementReceiver.sol) that can only call `GrantEscrow.performUpkeep`.
+
+| | |
+|---|---|
+| SettlementReceiver | [`0x5c7f09FDf7bC860AF7F0C5EcBD220B3391583a95`](https://sepolia.basescan.org/address/0x5c7f09FDf7bC860AF7F0C5EcBD220B3391583a95) |
+| Forwarder it currently trusts | `0x82300bd7c3958625581cc2f77bc6464dcecdf3e5` (MockKeystoneForwarder, used by simulation) |
+| Forwarder after DON deployment | `0xF8344CFd5c43616a4366C34E3EEE75af79a74482` (KeystoneForwarder) |
+
+| Step | Who | Transaction |
+|---|---|---|
+| Deploy SettlementReceiver | Grantor | [`0xd03334a1…5ec0`](https://sepolia.basescan.org/tx/0xd03334a10caf6b140defeaf031fded2d8e93495f1cb6d2c6b8d69f123da15ec0) |
+| Re-claim milestone 1, now that the deployment is published | Applicant | [`0x60b1d6ec…a3f8`](https://sepolia.basescan.org/tx/0x60b1d6ec0cfb5bb002f6f1a6d5db456142eb2d37af8af0769a77015b994ca3f8) |
+| Workflow run before the window closed: "No claims are past their dispute window." | CRE workflow | none, read only |
+| Workflow run after the window closed: settles milestone 1 → Approved | CRE workflow | [`0x1c0040c9…7333`](https://sepolia.basescan.org/tx/0x1c0040c9f0aeec982ac2a1363283a960f201f4c439782de6ae99a73548407333) |
+| Withdraw 2 USDC | Applicant | [`0x4baf0866…9142`](https://sepolia.basescan.org/tx/0x4baf0866baffed0b726b3e464298be6e793c51abb3f8c8a904d46f5ca5ca9142) |
+
+The settling transaction went from the CRE CLI signer to the MockKeystoneForwarder, which called `SettlementReceiver.onReport`. The receiver emitted `SettlementRelayed(1)` and called `GrantEscrow.performUpkeep`, which settled the claim on UMA. The applicant ended with 23 USDC: 21 before, less a 1 USDC bond, plus the bond returned and the 2 USDC milestone. The escrow now holds nothing: both milestones are paid.
+
+**What this does and doesn't show yet.** It shows the workflow's read, report and write path, the receiver, and the escrow's settlement working end to end on-chain. CRE deploy access is still pending, so these runs were started from the CRE CLI. The transaction was signed by our own wallet and passed through Chainlink's mock forwarder, which does not check DON signatures. It is not autonomous yet. Once access is granted, the same workflow is deployed to a DON and the receiver is pointed at the production forwarder. From then on it settles every minute without anyone starting it.
+
 Reproduce any step with, for example:
 
 ```bash

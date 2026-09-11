@@ -94,6 +94,7 @@ export function MilestoneCard({
   terms,
   milestone,
   isGrantee,
+  onActivity,
 }: {
   grantId: string;
   /** The asserter of every claim on this grant — UMA's dispute data names them. */
@@ -101,6 +102,8 @@ export function MilestoneCard({
   terms: EscrowTerms;
   milestone: MilestoneView;
   isGrantee: boolean;
+  /** Tells the page a transaction just landed, so it keeps re-reading the chain for a while. */
+  onActivity?: () => void;
 }) {
   const router = useRouter();
   const { address, isConnected } = useAccount();
@@ -143,6 +146,7 @@ export function MilestoneCard({
       setNote(null);
       try {
         setNote(await action());
+        onActivity?.();
         router.refresh();
       } catch (cause) {
         setError(txErrorMessage(cause));
@@ -151,7 +155,7 @@ export function MilestoneCard({
         setProgress(null);
       }
     },
-    [router],
+    [router, onActivity],
   );
 
   const ensureAllowance = useCallback(

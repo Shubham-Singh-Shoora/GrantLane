@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { formatUsdc, type EscrowTerms } from "@/lib/contracts";
-import { formatDuration, shortAddress } from "@/lib/status";
+import { formatDuration, grantStage, shortAddress } from "@/lib/status";
 
 export type GrantView = {
   grantId: string;
@@ -24,14 +24,13 @@ export function EscrowStatus({ grant, terms }: { grant: GrantView; terms: Escrow
   const released = BigInt(grant.releasedAmount);
   const remaining = total - released;
   const pct = total === 0n ? 0 : Number((released * 10_000n) / total) / 100;
+  const stage = grantStage(grant);
 
   return (
     <section className="card elev-sm" style={{ padding: 22, gap: 14 }}>
       <div className="flex items-center gap-2.5">
         <h4 className="m-0">Escrow</h4>
-        <span className={`ml-auto ${grant.active ? "tag tag-accent-2" : "tag tag-neutral"}`}>
-          {grant.active ? "Active" : "Closed"}
-        </span>
+        <span className={`ml-auto ${stage.tagClass}`}>{stage.label}</span>
       </div>
 
       <div>

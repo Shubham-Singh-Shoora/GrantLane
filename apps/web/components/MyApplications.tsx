@@ -5,28 +5,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { formatUnits } from "viem";
 import { useAccount } from "wagmi";
 import type { Application } from "@/lib/applications";
+import { ApplicationStageTag } from "./ApplicationStageTag";
 import { NotifyToggle, notifyStatusChange } from "./NotifyToggle";
 
-const STATUS_TAG: Record<string, string> = {
-  submitted: "tag tag-accent",
-  approved: "tag tag-accent-2",
-  funded: "tag tag-accent-2",
-  declined: "tag tag-neutral",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  submitted: "In review",
-  approved: "Scope agreed",
-  funded: "Funded",
-  declined: "Declined",
-};
+/** /api/applications adds whether each funded application's grant has paid out. */
+type ApplicationView = Application & { grantCompleted?: boolean };
 
 /** How often to re-check. Slow enough to be free, fast enough to feel live. */
 const POLL_MS = 20_000;
 
 export function MyApplications() {
   const { address, isConnected } = useAccount();
-  const [applications, setApplications] = useState<Application[] | null>(null);
+  const [applications, setApplications] = useState<ApplicationView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Remembers the last status seen per application, so a change can be
@@ -44,7 +34,7 @@ export function MyApplications() {
           return;
         }
 
-        const next = body.applications as Application[];
+        const next = body.applications as ApplicationView[];
         if (announce) {
           for (const application of next) {
             const previous = seen.current.get(application.id);
@@ -137,9 +127,7 @@ export function MyApplications() {
                   Submitted {new Date(application.createdAt).toLocaleDateString()}
                 </p>
               </div>
-              <span className={STATUS_TAG[application.status] ?? "tag tag-neutral"}>
-                {STATUS_LABEL[application.status] ?? application.status}
-              </span>
+              <ApplicationStageTag status={application.status} completed={application.grantCompleted} />
             </div>
 
             <div className="flex items-baseline gap-2 text-[13px]">
@@ -151,7 +139,9 @@ export function MyApplications() {
 
             {application.status === "funded" && application.grantId && (
               <p className="m-0 text-[12.5px]" style={{ color: "var(--color-accent)" }}>
-                Escrowed as grant #{application.grantId} — claim your milestones →
+                {application.grantCompleted
+                  ? `Grant #${application.grantId} — every milestone paid`
+                  : `Escrowed as grant #${application.grantId} — claim your milestones →`}
               </p>
             )}
           </Link>

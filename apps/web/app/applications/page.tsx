@@ -1,27 +1,15 @@
 import Link from "next/link";
 import { GranterOnly } from "@/components/GranterOnly";
 import { formatUnits } from "viem";
-import { listApplications, type Application } from "@/lib/applications";
+import { listApplications } from "@/lib/applications";
+import { withCompletion } from "@/lib/grantProgress";
 import { hasDurableStore } from "@/lib/kv";
+import { ApplicationStageTag } from "@/components/ApplicationStageTag";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_TAG: Record<Application["status"], string> = {
-  submitted: "tag tag-accent",
-  approved: "tag tag-accent-2",
-  funded: "tag tag-accent-2",
-  declined: "tag tag-neutral",
-};
-
-const STATUS_LABEL: Record<Application["status"], string> = {
-  submitted: "Needs review",
-  approved: "Scope agreed",
-  funded: "Funded",
-  declined: "Declined",
-};
-
 export default async function ApplicationsPage() {
-  const applications = await listApplications();
+  const applications = await withCompletion(await listApplications());
   const needsReview = applications.filter((a) => a.status === "submitted").length;
 
   return (
@@ -91,7 +79,7 @@ export default async function ApplicationsPage() {
                       </p>
                     )}
                   </div>
-                  <span className={STATUS_TAG[application.status]}>{STATUS_LABEL[application.status]}</span>
+                  <ApplicationStageTag status={application.status} completed={application.grantCompleted} />
                 </div>
 
                 <p className="m-0 line-clamp-3 text-[13px]" style={{ opacity: 0.75 }}>

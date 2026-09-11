@@ -7,6 +7,7 @@ import {
   type ProposedMilestone,
 } from "@/lib/applications";
 import { fetchRepoSnapshot } from "@/lib/github";
+import { withCompletion } from "@/lib/grantProgress";
 import { readTicket } from "@/lib/verifications";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +44,12 @@ export async function GET(request: Request) {
       ? all.filter((a) => a.wallet.toLowerCase() === wallet.toLowerCase())
       : all;
 
-  return NextResponse.json({ applications }, { headers: { "Cache-Control": "no-store" } });
+  // Each funded application says whether its grant has paid every milestone, so
+  // the applicant's list can read "Completed" rather than "Escrowed".
+  return NextResponse.json(
+    { applications: await withCompletion(applications) },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 /**

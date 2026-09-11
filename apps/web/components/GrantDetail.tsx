@@ -1,14 +1,21 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Address } from "viem";
 import { useAccount } from "wagmi";
 import { formatUsdc, STATUS, type EscrowTerms } from "@/lib/contracts";
-import { formatDuration, shortAddress } from "@/lib/status";
+import { formatDuration, grantStage, shortAddress } from "@/lib/status";
 import { EscrowStatus, type GrantView } from "./EscrowStatus";
 import { MilestoneCard, type MilestoneView } from "./MilestoneCard";
 import { PayoutWalletPanel } from "./PayoutWalletPanel";
 import { WithdrawPanel } from "./WithdrawPanel";
+
+/** How often to re-read the chain while something on this grant can change without the viewer acting. */
+const LIVE_REFRESH_MS = 8_000;
+/** After the viewer's own transaction, keep re-reading this long in case the RPC lags. */
+const AFTER_ACTIVITY_MS = 60_000;
 
 export function GrantDetail({
   grant,
@@ -19,12 +26,31 @@ export function GrantDetail({
   milestones: MilestoneView[];
   terms: EscrowTerms;
 }) {
+  const router = useRouter();
   const { address } = useAccount();
   const isGrantee = !!address && address.toLowerCase() === grant.grantee.toLowerCase();
 
   const total = BigInt(grant.totalAmount);
   const released = BigInt(grant.releasedAmount);
   const approved = milestones.filter((m) => m.status === STATUS.Approved).length;
+  const stage = grantStage(grant);
+
+  // A claim in its window can be settled by anyone — the other party, or the CRE
+  // workflow — and a dispute can be answered at any moment, so the page re-reads the
+  // chain while any milestone is in flight. It also keeps re-reading for a minute
+  // after the viewer's own transaction: the public RPC is load-balanced, and the
+  // first read after a receipt can come from a node that hasn't seen the block yet.
+  const live = milestones.some((m) => m.status === STATUS.Claimed || m.status === STATUS.Disputed);
+  const [watchUntil, setWatchUntil] = useState(0);
+  const onActivity = useCallback(() => setWatchUntil(Date.now() + AFTER_ACTIVITY_MS), []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (live || Date.now() < watchUntil) router.refresh();
+    }, LIVE_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [live, watchUntil, router]);
 
   return (
     <div className="animate-rise">
@@ -53,9 +79,7 @@ export function GrantDetail({
         <div className="min-w-0 flex-1 basis-[340px]">
           <div className="mb-2 flex flex-wrap items-center gap-2.5">
             <span className="tag tag-neutral mono">#{grant.grantId}</span>
-            <span className={grant.active ? "tag tag-accent-2" : "tag tag-neutral"}>
-              {grant.active ? "Active" : "Closed"}
-            </span>
+            <span className={stage.tagClass}>{stage.label}</span>
           </div>
           <h1 className="mb-2 text-[38px]">Grant #{grant.grantId}</h1>
           <p className="m-0 text-[15px]" style={{ opacity: 0.7 }}>
@@ -102,6 +126,7 @@ export function GrantDetail({
                   terms={terms}
                   milestone={milestone}
                   isGrantee={isGrantee}
+                  onActivity={onActivity}
                 />
               ))}
             </div>
@@ -116,6 +141,7 @@ export function GrantDetail({
             escrowAddress={terms.escrowAddress}
             currentPayoutWallet={grant.payoutWallet}
             isGrantee={isGrantee}
+            onActivity={onActivity}
           />
         </aside>
       </div>

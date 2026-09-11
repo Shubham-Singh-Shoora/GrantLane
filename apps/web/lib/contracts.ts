@@ -26,9 +26,13 @@ export function settlementReceiverAddress(): Address | null {
   return value && /^0x[0-9a-fA-F]{40}$/.test(value) ? (value as Address) : null;
 }
 
+/**
+ * `cache: "no-store"` keeps Next.js from caching these JSON-RPC calls on the
+ * server. Chain state changes under every page; a cached read is a wrong read.
+ */
 export const publicClient = createPublicClient({
   chain: appChain,
-  transport: http(RPC_URL),
+  transport: http(RPC_URL, { fetchOptions: { cache: "no-store" } }),
 });
 
 /**

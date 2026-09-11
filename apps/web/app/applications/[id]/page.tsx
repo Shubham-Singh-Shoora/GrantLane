@@ -7,16 +7,11 @@ import { grantEscrowAddress, usdcAddress } from "@/lib/contracts";
 import { GithubRepoCard } from "@/components/GithubRepoCard";
 import { ReviewPanel } from "@/components/ReviewPanel";
 import { SetupNotice } from "@/components/SetupNotice";
+import { ApplicationStageTag } from "@/components/ApplicationStageTag";
+import { isGrantCompleted } from "@/lib/grantProgress";
 import { shortAddress } from "@/lib/status";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_LABEL = {
-  submitted: "Needs review",
-  approved: "Scope agreed",
-  funded: "Funded",
-  declined: "Declined",
-} as const;
 
 export default async function ApplicationDetailPage({
   params,
@@ -39,6 +34,8 @@ export default async function ApplicationDetailPage({
     return <SetupNotice detail={String(cause instanceof Error ? cause.message : cause)} />;
   }
 
+  const grantCompleted = await isGrantCompleted(application);
+
   return (
     <ApplicationAccess ownerWallet={application.wallet}>
     <div className="animate-rise">
@@ -59,9 +56,7 @@ export default async function ApplicationDetailPage({
       <div className="flex flex-wrap items-start gap-4 pb-6">
         <div className="min-w-0 flex-1 basis-[340px]">
           <div className="mb-2 flex flex-wrap items-center gap-2.5">
-            <span className={application.status === "declined" ? "tag tag-neutral" : "tag tag-accent-2"}>
-              {STATUS_LABEL[application.status]}
-            </span>
+            <ApplicationStageTag status={application.status} completed={grantCompleted} />
             {application.humanVerified && <span className="tag tag-accent-2">✓ Human verified</span>}
           </div>
           <h1 className="mb-2 text-[38px]">{application.projectName}</h1>
@@ -178,7 +173,12 @@ export default async function ApplicationDetailPage({
           </section>
 
           {application.status !== "declined" && (
-            <ReviewPanel application={application} escrowAddress={escrow} usdcAddress={usdc} />
+            <ReviewPanel
+              application={application}
+              escrowAddress={escrow}
+              usdcAddress={usdc}
+              grantCompleted={grantCompleted}
+            />
           )}
         </aside>
       </div>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { formatUsdc, readGrant, readGrantCount, readMilestones, STATUS } from "@/lib/contracts";
-import { addressInitials, shortAddress, statusDotFill, statusName } from "@/lib/status";
+import { addressInitials, grantStage, shortAddress, statusDotFill, statusName } from "@/lib/status";
 import { SetupNotice } from "@/components/SetupNotice";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +61,10 @@ function GrantCard({ row }: { row: Row }) {
             {shortAddress(row.grantee, 10, 6)}
           </p>
         </div>
-        <span className={row.active ? "tag tag-accent-2" : "tag tag-neutral"}>{row.active ? "Active" : "Closed"}</span>
+        {(() => {
+          const stage = grantStage({ active: row.active, totalAmount: row.total, releasedAmount: row.released });
+          return <span className={stage.tagClass}>{stage.label}</span>;
+        })()}
       </div>
 
       <div>

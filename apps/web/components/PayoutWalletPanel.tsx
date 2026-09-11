@@ -20,11 +20,14 @@ export function PayoutWalletPanel({
   escrowAddress,
   currentPayoutWallet,
   isGrantee,
+  onActivity,
 }: {
   grantId: string;
   escrowAddress: `0x${string}`;
   currentPayoutWallet: string;
   isGrantee: boolean;
+  /** Tells the page a transaction just landed, so it keeps re-reading the chain for a while. */
+  onActivity?: () => void;
 }) {
   const router = useRouter();
   const { isConnected } = useAccount();
@@ -77,6 +80,7 @@ export function PayoutWalletPanel({
       setAttestation(null);
       setEditing(false);
       setNewWallet("");
+      onActivity?.();
       router.refresh();
     } catch (cause) {
       setNote(txErrorMessage(cause));

@@ -45,10 +45,13 @@ export function ReviewPanel({
   application,
   escrowAddress,
   usdcAddress,
+  grantCompleted = false,
 }: {
   application: Application;
   escrowAddress: Address;
   usdcAddress: Address;
+  /** The funded grant has paid out every milestone (read from the chain by the page). */
+  grantCompleted?: boolean;
 }) {
   const router = useRouter();
   const { address, isConnected } = useAccount();
@@ -171,8 +174,9 @@ export function ReviewPanel({
       { key: "submitted", label: "Submitted", body: "Your application is in the review queue." },
       { key: "approved", label: "Scope agreed", body: "The granter has settled which milestones they'll fund." },
       { key: "funded", label: "Escrowed on Base", body: "The money is locked. You can start claiming milestones." },
+      { key: "completed", label: "Completed", body: "Every milestone has been approved and paid out." },
     ] as const;
-    const reachedIndex = STAGES.findIndex((s) => s.key === application.status);
+    const reachedIndex = grantCompleted ? STAGES.length - 1 : STAGES.findIndex((s) => s.key === application.status);
 
     return (
       <section className="card elev-sm" style={{ padding: 22, gap: 16 }}>
@@ -243,7 +247,16 @@ export function ReviewPanel({
           className="rounded-[20px] px-4 py-3 text-[13.5px]"
           style={{ background: "color-mix(in srgb, var(--color-accent-2) 16%, transparent)" }}
         >
-          <strong>Funded.</strong> Escrowed as grant #{application.grantId} on Base Sepolia.
+          {grantCompleted ? (
+            <>
+              <strong>Completed.</strong> Every milestone of grant #{application.grantId} has been paid out.
+            </>
+          ) : (
+            <>
+              <strong>Escrowed.</strong> Locked as grant #{application.grantId} on Base Sepolia; milestones pay out as
+              claims settle.
+            </>
+          )}
         </div>
       ) : (
         drafts.map((draft, index) => (

@@ -72,6 +72,45 @@ export function formatDuration(seconds: number): string {
   return `${seconds} s`;
 }
 
+export type Stage = { label: string; tagClass: string };
+
+/**
+ * A grant's headline state. "Completed" wins over "Closed": a grant whose funder
+ * closed it after every milestone paid out still reads as a finished grant.
+ */
+export function grantStage(grant: {
+  active: boolean;
+  totalAmount: bigint | string;
+  releasedAmount: bigint | string;
+}): Stage {
+  const total = BigInt(grant.totalAmount);
+  const released = BigInt(grant.releasedAmount);
+  if (total > 0n && released >= total) return { label: "✓ Completed", tagClass: "tag tag-accent-2" };
+  if (!grant.active) return { label: "Closed", tagClass: "tag tag-neutral" };
+  return { label: "Active", tagClass: "tag tag-accent" };
+}
+
+/**
+ * An application's headline state. Funding means the money is *locked*, not paid,
+ * so a funded application reads "Escrowed" until its grant has paid every milestone.
+ */
+export function applicationStage(status: string, grantCompleted = false): Stage {
+  switch (status) {
+    case "submitted":
+      return { label: "In review", tagClass: "tag tag-accent" };
+    case "approved":
+      return { label: "Scope agreed", tagClass: "tag tag-accent-2" };
+    case "funded":
+      return grantCompleted
+        ? { label: "✓ Completed", tagClass: "tag tag-accent-2" }
+        : { label: "Escrowed", tagClass: "tag tag-accent" };
+    case "declined":
+      return { label: "Declined", tagClass: "tag tag-neutral" };
+    default:
+      return { label: status, tagClass: "tag tag-neutral" };
+  }
+}
+
 /** Deterministic two-character badge for an address. */
 export function addressInitials(address: string): string {
   return address.replace(/^0x/i, "").slice(0, 2).toUpperCase();

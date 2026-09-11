@@ -8,6 +8,6 @@ optimizer_runs = 200
 via_ir = false
 
 [rpc_endpoints]
-arc_testnet = "${ARC_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
 
 [etherscan]

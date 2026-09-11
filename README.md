@@ -1,48 +1,74 @@
 # GrantLane
 
-Milestone-based grant escrow where the review is confidential and the payout is automatic.
+Milestone grant escrow where a claim has to survive a challenge before it pays.
 
-A funder escrows USDC against a list of milestones. When a grantee submits evidence, a
-**Chainlink CRE** workflow scores it **inside a Nitro TEE** — the reviewer rubric and the raw
-submission never leave the enclave — and hands only the verdict back to the DON. The DON signs a
-report and writes it to **Arc**, which releases the USDC. Repointing a grant's payout wallet is
-gated on a **World ID Selfie Check**.
+A granter escrows USDC against a list of milestones. When a milestone is done, the grantee publishes
+their evidence and claims it on **UMA's Optimistic Oracle** with a USDC bond. The claim is open to
+dispute for a set window. If nobody disputes it, it pays out. If someone does, UMA decides, and
+whoever was wrong loses their bond. Applying, claiming and changing the payout wallet are each gated
+on a **World ID Selfie Check**. Settlement is open to anyone, and a **Chainlink CRE** workflow is built
+to do it on a schedule.
 
-No human reviewer ever sees the raw submission, and no server key can move escrowed funds.
+Nobody approves a milestone by hand, and no key can release escrowed funds.
+
+Everything runs on **Base Sepolia**. Every step has been done live; the transactions are in
+[docs/base-sepolia-evidence.md](docs/base-sepolia-evidence.md).
 
 ---
 
-## How the three pieces fit
+## Why claims and disputes, not scoring
+
+The first version scored milestone evidence inside a Chainlink CRE enclave. The scorer was keyword
+matching, and replacing it with something smarter doesn't fix the real problem: nothing automated
+can tell whether work is actually *good*. So GrantLane stopped pretending to judge. It makes lying
+expensive instead. A claim costs a bond, the evidence is public, and anyone who thinks the claim is
+false can take the bond by proving it on UMA.
+
+## How it works
 
 ```
-grantee ──submit evidence──► /api/milestones ──HTTP trigger──► CRE workflow
-                                   │                               │
-                          hash mirrored on-chain          [ Nitro TEE ]
-                                   │                       rubric (secret)
-                                   ▼                       evidence (confidential HTTP)
-                            GrantEscrow.submitEvidence            │ verdict only
-                                                                  ▼
-                                                            DON consensus
-                                                          runtime.report(...)
-                                                                  │
-grantee ◄──── USDC ──── GrantEscrow._processReport ◄── evmClient.writeReport (Arc)
-
-
-grantee ──Selfie Check──► /api/verify-selfie ──► World verify API
-                                   │
-                        EIP-712 attestation (attestor key)
-                                   ▼
-                    GrantEscrow.changePayoutWallet (grantee sends the tx)
+applicant ──Selfie Check──► /api/verify-selfie ──► signed ticket
+    │
+    ├─ evidence + ticket ──► /api/milestones ──► stores the bundle at /evidence/<hash>
+    │                                          └► signs a MilestoneClaim (attestor key)
+    │
+    └─ 1 USDC bond ──► GrantEscrow.submitMilestone ──► UMA OOv3.assertTruth (5-minute window)
+                                                              │
+       grantor, or anyone ── disputeAssertion + 1 USDC ───────┤
+                                                              │
+       undisputed ─► window closes ─► settle (anyone, or the CRE workflow)
+       disputed    ─► UMA answers  ─► settle
+                                                              │
+                                     assertionResolvedCallback(true | false)
+                                                              │
+       payout wallet ◄── withdraw() ◄── credited  (false: milestone reopens)
 ```
 
-Two properties worth calling out:
+What the contract enforces:
 
-- **Only a DON-signed report can pay.** `GrantEscrow` inherits `ReceiverTemplate`, which rejects
-  any caller that is not the configured `KeystoneForwarder`, and optionally any report from an
-  unexpected workflow owner. The server has no path to release funds.
-- **The attestor key can redirect a payout but never release one.** It signs an EIP-712 struct that
-  the grantee submits themselves; the nullifier is spent on first use, so a replayed Selfie Check
-  proof is rejected on-chain.
+- **Only UMA can resolve a claim.** The callbacks accept calls from the oracle and nothing else, and
+  ignore assertions GrantEscrow didn't make.
+- **Funds can't be locked by a failed transfer.** Approved milestones are credited and withdrawn
+  (pull payment), so settlement never depends on a transfer succeeding.
+- **Settlement is permissionless.** `settle()` and `performUpkeep()` can be called by anyone once a
+  window closes; `performUpkeep` re-checks every id, so bad input can't do harm.
+- **The grantor can't pull the money out from under a claim.** `closeGrant` is blocked while any
+  claim is live or disputed.
+- **Terms can't be rewritten afterwards.** `createGrant` commits a hash of the milestone terms, and
+  every claim quotes it.
+- **The attestor key can authorise, never pay.** It signs Selfie Check attestations for claims and
+  payout-wallet changes. A claim it signs still needs the bond and still faces the dispute window.
+
+## What's live on Base Sepolia
+
+| | Address |
+| --- | --- |
+| GrantEscrow | [`0x85AC2a3e1EBc0959599025eB6eF36eD34c862840`](https://sepolia.basescan.org/address/0x85AC2a3e1EBc0959599025eB6eF36eD34c862840) |
+| SettlementReceiver (CRE) | [`0x5c7f09FDf7bC860AF7F0C5EcBD220B3391583a95`](https://sepolia.basescan.org/address/0x5c7f09FDf7bC860AF7F0C5EcBD220B3391583a95) |
+| UMA Optimistic Oracle V3 | `0x0F7fC5E6482f096380db6158f978167b57388deE` |
+| UMA sandbox oracle (testnet disputes) | `0x54e38A62ED3dC88e2B80cBA50deB940580511D26` |
+| USDC (Circle) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
+| Dispute window · bond | 300 s (demo; 48 h in real use) · 1 USDC |
 
 ---
 
@@ -50,41 +76,38 @@ Two properties worth calling out:
 
 | Path | What it is |
 | --- | --- |
-| `apps/web` | Next.js 14 app — applicant + reviewer UI, and the server routes World requires |
-| `apps/web/app/globals.css` | The **Organic** design tokens — the source of truth for the look |
-| `contracts` | Foundry project — `GrantEscrow`, `ReceiverTemplate`, deploy script, 20 tests |
-| `cre-workflow` | CRE TypeScript workflow — the TEE handler that scores milestones |
-| `docs` | The two required hackathon write-ups |
-| `scripts/gen-abi.mjs` | Regenerates the typed ABI the web app imports |
+| `apps/web` | Next.js 14 app: applicant, granter and evidence pages, plus the server routes World requires |
+| `contracts/src/GrantEscrow.sol` | The escrow: UMA assertions, callbacks, settlement, withdraw, Selfie Check gates |
+| `contracts/src/automation` | `SettlementReceiver`, which a CRE report reaches `performUpkeep` through |
+| `contracts/test` | 45 unit tests on a mock UMA, 8 receiver tests, 7 fork tests on real UMA and USDC |
+| `contracts/script` | `Deploy`, `DeploySettlementReceiver`, and `Demo` (drive a live escrow step by step) |
+| `cre-workflow/settlement-workflow` | Cron workflow: reads `checkUpkeep`, reports `performData` |
+| `docs` | Live-run evidence, the demo script, World feedback, and the retired CRE scoring evidence |
 
 ---
 
 ## Prerequisites
 
-Foundry, Bun, and the CRE CLI are Linux-first; on Windows they run under **WSL**. The npm scripts
-already wrap them, so `npm run contracts:test` works from Windows.
+Foundry, Bun and the CRE CLI are Linux-first; on Windows they run under **WSL**. The npm scripts wrap
+them, so `npm run contracts:test` works from Windows. Verified versions: Foundry `1.8.1`, Bun
+`1.4.2`, CRE CLI `v1.32.0`, `@chainlink/cre-sdk` `1.20`.
 
 ```bash
 # in WSL
 curl -L https://foundry.paradigm.xyz | bash && ~/.foundry/bin/foundryup
-curl -fsSL https://bun.sh/install | bash          # needs `unzip` installed
+curl -fsSL https://bun.sh/install | bash          # needs `unzip`
 curl -fsSL https://github.com/smartcontractkit/cre-cli/releases/latest/download/install.sh | bash
 ```
-
-Verified versions in this repo: Foundry `1.8.1`, Bun `1.4.2`, CRE CLI `v1.32.0` (Arc support needs
-CLI ≥ 1.0.7 and TS SDK ≥ 1.3.1 — both clear).
-
----
 
 ## Setup
 
 ```bash
-cp .env.example .env       # then fill it in
+cp .env.example .env                 # Foundry and demo tooling
+cp .env.example apps/web/.env.local  # then keep only the [web] values
 npm install --prefix apps/web
 ```
 
-Restore the Solidity dependencies (they are gitignored, and `forge install` ran with `--no-git`, so
-there is no submodule to restore from):
+Restore the Solidity dependencies (gitignored, installed with `--no-git`):
 
 ```bash
 wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts && forge install foundry-rs/forge-std --no-git && forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git'
@@ -93,196 +116,140 @@ wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts &&
 ### Contracts
 
 ```bash
-npm run contracts:test        # 20 passing
-npm run contracts:build
+npm run contracts:test               # unit + receiver tests; fork tests skip without an RPC
 ```
 
-Deploy to Arc Testnet (chain `5042002`, RPC `https://rpc.testnet.arc.io`). Fund the deployer from
-[faucet.circle.com](https://faucet.circle.com) — **USDC is Arc's native gas token**, so the same
-asset pays for gas and fills the escrow.
+To run the fork tests against real UMA and Circle USDC, and to deploy, load the root `.env` first
+(in WSL, from the repo root):
 
 ```bash
-wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts && \
-  forge script script/Deploy.s.sol:Deploy --rpc-url $ARC_RPC_URL --private-key $DEPLOYER_PRIVATE_KEY --broadcast'
+set -a; source <(sed 's/\r$//' .env); set +a; cd contracts
+forge test                                                           # all 60
+forge script script/Deploy.s.sol:Deploy --rpc-url base_sepolia --private-key "$DEPLOYER_PRIVATE_KEY" --broadcast
+forge script script/DeploySettlementReceiver.s.sol:DeploySettlementReceiver --rpc-url base_sepolia --private-key "$DEPLOYER_PRIVATE_KEY" --broadcast
 ```
 
-Then set `NEXT_PUBLIC_GRANT_ESCROW_ADDRESS` and run `npm run gen:abi`.
+After a redeploy, update the addresses in both env files and run `npm run gen:abi` if the ABI
+changed.
+
+`Demo.s.sol` drives a deployed escrow one step per call, which is how the live run was produced:
+
+```bash
+forge script script/Demo.s.sol:Demo --rpc-url base_sepolia --broadcast --sig "createGrant()"
+forge script script/Demo.s.sol:Demo --rpc-url base_sepolia --broadcast --sig "claim(uint256,uint256,string)" 0 0 "https://…"
+forge script script/Demo.s.sol:Demo --rpc-url base_sepolia --broadcast --sig "dispute(uint256,uint256)" 0 0
+forge script script/Demo.s.sol:Demo --rpc-url base_sepolia --broadcast --sig "resolve(uint256,uint256,bool)" 0 0 false
+forge script script/Demo.s.sol:Demo --rpc-url base_sepolia --broadcast --sig "settle(uint256,uint256)" 0 0
+forge script script/Demo.s.sol:Demo --rpc-url base_sepolia --sig "status(uint256)" 0
+```
+
+It signs the claim attestation directly with the attestor key, so it exercises the contract, not the
+Selfie Check. The web app issues that signature only after a real Selfie Check verifies.
 
 ### Web
 
 ```bash
-npm run dev        # http://localhost:3000
+npm run dev          # http://localhost:3001
 ```
 
-Deploying? See **[DEPLOYMENT.md](DEPLOYMENT.md)**. The short version: Vercel with Root Directory
-`apps/web`, plus a Redis store — Vercel's filesystem is read-only, so without one every application
-is lost on the next cold start. Nothing else needs hosting.
+Deploying? See **[DEPLOYMENT.md](DEPLOYMENT.md)**: Vercel with Root Directory `apps/web`, plus a Redis
+store. Nothing else needs hosting.
 
-### CRE workflow
+### CRE settlement workflow
 
 ```bash
-cre login                     # required — init, build and simulate all need auth
+cre login
 npm run workflow:typecheck
-npm run workflow:build
-npm run workflow:simulate
+npm run workflow:simulate     # reads checkUpkeep; reports "no claims" or what it would settle
+npm run workflow:broadcast    # the same, and actually writes the settlement on Base Sepolia
 ```
 
-A milestone has been paid end to end on live Arc — TEE scoring, DON report, USDC out of escrow.
-The run, with tx hashes and before/after balances, is in
-[docs/cre-evidence/live-payout-run.md](docs/cre-evidence/live-payout-run.md).
+**Deploy access isn't granted to this org yet** (`cre account access`). Until it is, the workflow runs
+from the CLI: real transactions, signed by our own key, through Chainlink's mock forwarder. That
+proves the logic, not autonomy. Once access is granted:
 
-To repeat it: `scripts/seed-grant.sh` creates a grant, `scripts/prepare-payout-demo.sh` marks a
-milestone submitted and points the escrow at the tenant's mock forwarder, then
-`npm run workflow:broadcast` runs the workflow for real.
+```bash
+cast send 0x5c7f09FDf7bC860AF7F0C5EcBD220B3391583a95 'setForwarderAddress(address)' 0xF8344CFd5c43616a4366C34E3EEE75af79a74482 --rpc-url base_sepolia --private-key "$DEPLOYER_PRIVATE_KEY"
+cast send 0x5c7f09FDf7bC860AF7F0C5EcBD220B3391583a95 'setExpectedAuthor(address)' <workflow owner> --rpc-url base_sepolia --private-key "$DEPLOYER_PRIVATE_KEY"
+cd cre-workflow && cre workflow deploy ./settlement-workflow --target production-settings
+```
 
-Two things to know before deploying the workflow rather than simulating it:
-
-- **Deployment registry** is `private` for this org. `onchain:ethereum-testnet-sepolia` — what the
-  scaffold suggests — is not available; `cre workflow simulate` reports which registries are.
-- **Deploy access** is a separate grant (`cre account access`). Until it is enabled, runs go through
-  the simulator, which still writes real transactions with `--broadcast`.
+Why CRE and not Chainlink Automation: Automation's testnet service was sunset on June 24, 2026, and
+its Base Sepolia registry no longer performs upkeeps. The workflow follows Chainlink's documented
+Automation-to-CRE migration: it runs the same `checkUpkeep`, then reaches the same `performUpkeep`.
 
 ---
 
 ## Configuration that is easy to get wrong
 
-**World ID 4.x needs a Relying Party, not just an App ID.** `IDKit` requires an `rp_context`
-containing an ECDSA signature over the request nonce and validity window, produced by
+**World ID 4.x needs a Relying Party, not just an App ID.** IDKit requires an `rp_context` signed by
 `@worldcoin/idkit-server`'s `signRequest()`. That means `WORLD_RP_ID` **and** `WORLD_RP_SIGNING_KEY`
-in addition to `NEXT_PUBLIC_WORLD_APP_ID`. The browser fetches a fresh context from
-`/api/idkit-context` immediately before opening the widget.
+as well as `NEXT_PUBLIC_WORLD_APP_ID`. The browser fetches a fresh context from `/api/idkit-context`
+immediately before opening the widget.
 
-**Selfie Check entitlement is server-side, per App ID.** The SDK type still says "currently in preview", but that is stale docstring text — it cannot know your entitlement. Visit `/verify` to find out: a QR means the App ID is enabled, and `credential_unavailable`/`feature_unavailable` means it is not.
+**Selfie Check entitlement is server-side, per App ID.** Visit `/verify` to find out: a QR means the
+App ID is enabled, and `credential_unavailable`/`feature_unavailable` means it is not.
 
-**Granter access is an allowlist.** `NEXT_PUBLIC_GRANTER_ADDRESSES` (comma-separated) decides which
-wallets see the review queue. Connect one and the Applications and Audit tabs appear; connect
-anything else and you only ever see the applicant side.
+**EIP-712 field order must match the contract exactly.** A mismatch doesn't error. Every signature
+just recovers to the wrong address on-chain. `apps/web/lib/eip712.ts` mirrors the typehash strings
+in `GrantEscrow.sol`, and its digests have been checked against the deployed contract.
 
-That gate is **UI segregation, not authorisation**. The money is already safe without it — escrowing
-spends the funder's own USDC, releasing needs a DON-signed report, and submitting evidence is
-restricted to the grantee, all enforced by the contract. What the allowlist protects is the
-off-chain review surface, and a determined caller can still reach `/api/applications` directly
-because the server cannot authenticate a wallet without a signature. Closing that properly means
-sign-in-with-Ethereum. See `apps/web/lib/access.ts`.
+**Answering a UMA dispute on testnet needs the exact request data.** The sandbox oracle only accepts
+an answer for a price that was requested. The ancillary data is
+`assertionId:<hex>,ooAsserter:<hex>`, and `ooAsserter` is the assertion's **asserter** (the grantee),
+not the oracle. See `contracts/script/UmaSandbox.sol` and `apps/web/lib/uma.ts`.
 
-**Arc Testnet values**, all verified against live sources:
+**Values that `forge script` logs come from its local simulation.** Assertion ids and expiry times
+include the block timestamp, so they differ from what was mined. Read them back with `status`.
 
-| | |
-| --- | --- |
-| Chain ID | `5042002` (`eth_chainId` → `0x4cef52`) |
-| RPC | `https://rpc.testnet.arc.io` |
-| CRE chain selector | `arc-testnet` → `3034092155422581607` |
-| KeystoneForwarder | `0x76c9cf548b4179F8901cda1f8623568b58215E62` |
-| Native gas token | USDC at **18 decimals** |
-| Escrow ERC-20 (USDC) | `0x3600000000000000000000000000000000000000`, **6 decimals** |
-| GrantEscrow (deployed) | `0xCd84686B7fCc4bC120c0Bfb5e97a92bb9fbEc994` |
-
-The first deployment — `0x85AC2a3e…c862840`, deploy tx `0xd344…7697` — is still on-chain and is what's
-referenced in [docs/cre-evidence/live-payout-run.md](docs/cre-evidence/live-payout-run.md). The app now
-points at a fresh escrow so the grant list starts empty; the old one remains as immutable evidence of
-the live payout.
-
-### `forge script` cannot send USDC transactions on Arc
-
-Arc's USDC checks a blocklist precompile at `0x1800…0001` on every transfer. It is a *native*
-precompile — its bytecode is the stub `0x01` — so Foundry's local REVM cannot execute it and any
-`transferFrom` reverts with `StackUnderflow`. Because `forge script` always executes the script
-locally to collect the transactions it will broadcast, it fails before sending anything, and
-`--skip-simulation` does not change that.
-
-Contract *deployment* is unaffected (`scripts/deploy-arc.sh` uses `forge script` happily). Anything
-that moves USDC has to go through `cast send`, which estimates gas on the node where the precompile
-is real — see `scripts/seed-grant.sh`. On-chain, `isBlocklisted` returns `false` for both the escrow
-and the deployer; the revert is purely a simulation artifact.
-
-> The ERC-20 at `0x3600…0000` mirrors the native USDC balance, so **paying gas reduces the balance
-> available to escrow**. Budget for both out of the same funds.
-
-**Two different USDC decimalities coexist, and confusing them is a 10¹² error.** Arc's *native*
-gas token is USDC with **18 decimals** (`lib/chain.ts`), while the *escrowed ERC-20* is USDC with
-the usual **6 decimals** (`formatUsdc` in `lib/contracts.ts`). Native balances and escrow amounts
-must never be formatted with the same helper.
-
-### The look is token-driven
-
-The UI uses **Organic** — a warm cream/terracotta system (Caprasimo display, Figtree body, pill
-controls) imported from Claude Design. Every colour, radius and shadow is a CSS custom property in
-`apps/web/app/globals.css`; Tailwind's palette maps onto those variables in `tailwind.config.ts`
-rather than onto literals.
-
-Two consequences worth knowing:
-
-- **Dark mode is one attribute.** `[data-theme="dark"]` re-declares the same tokens, so there is no
-  `dark:` variant anywhere in the components. An inline script in `layout.tsx` applies the stored
-  choice before first paint — without it, a cream-to-near-black swap flashes badly.
-- **Retune the system in one file.** Changing `--color-accent` restyles buttons, tags, progress
-  bars, timeline nodes and the nav pill together.
-
-Milestone status colours live in `apps/web/lib/status.ts` so the grant-card dots, timeline nodes,
-milestone tags and review table can't drift apart.
+**Granter access is an allowlist.** `NEXT_PUBLIC_GRANTER_ADDRESSES` decides which wallets see the
+review queue. It is UI segregation, not authorisation: the money is protected on-chain regardless,
+but `/api/applications` is reachable directly because the server can't authenticate a wallet without
+a signature. Closing that means sign-in-with-Ethereum.
 
 ### Two env files, on purpose
 
 | File | Read by | Contains |
 | --- | --- | --- |
-| `apps/web/.env.local` | Next.js, via its own loading | Only what the web app uses |
-| `.env` (repo root) | Foundry and the CRE CLI | Deploy keys, RPC, workflow settings |
+| `apps/web/.env.local` | Next.js | Only what the web app uses (the `[web]` values) |
+| `.env` (repo root) | Foundry and the demo tooling | Deploy keys, RPC, demo wallets |
 
-The web app used to read the root `.env` through a custom loader. That loader is gone: a deployment
-gets its variables from the host's project settings, so bridging to a file outside the project
-directory bought nothing and only obscured where values came from.
+The escrow and USDC addresses and the attestor key appear in both and must be kept in step. Both
+files are gitignored.
 
-Four values appear in both files and must be kept in step — `NEXT_PUBLIC_GRANT_ESCROW_ADDRESS`,
-`NEXT_PUBLIC_USDC_ADDRESS`, `NEXT_PUBLIC_ARC_RPC_URL`/`ARC_RPC_URL`, and the attestor key. Change
-the escrow address in one and the other will keep pointing at the old contract.
+### The look is token-driven
 
-Both are gitignored. `.env.example` documents every variable; `DEPLOYMENT.md` lists the subset to
-set on the host.
+The UI uses **Organic**, a warm cream/terracotta system imported from Claude Design. Every colour,
+radius and shadow is a CSS custom property in `apps/web/app/globals.css`, and dark mode is one
+attribute (`[data-theme="dark"]`) re-declaring the same tokens. Milestone status colours live in
+`apps/web/lib/status.ts` so every view agrees.
 
 ---
 
-## Where this repo departs from the original spec
+## Departures from the docs
 
-The spec was written against docs that have since moved. These are the corrections, each verified
-against the shipped packages rather than assumed:
-
-- **`IDKitWidget` does not exist in `@worldcoin/idkit@4.x`.** The request-mode component is
-  `IDKitRequestWidget`, and the credential is selected with a preset. `selfieCheckLegacy()` is
-  confirmed exported. This app uses the `useIDKitRequest` hook rather than the widget, so that the
-  grant flow and `/verify` share one code path and so refusals surface as their real error code
-  instead of a generic message.
-- **`rp_context` is required**, which forces the RP signing key and `/api/idkit-context` described
-  above. The spec did not mention Relying Party registration at all.
-- **Proof verification is `POST /api/v4/verify/{rp_id}` on `developer.world.org`**, and the
-  complete IDKit result is forwarded verbatim. There is no `verification_level` field to construct.
+- **`IDKitWidget` does not exist in `@worldcoin/idkit@4.x`.** This app uses the `useIDKitRequest` hook
+  with the `selfieCheckLegacy()` preset, so the grant flow and `/verify` share one code path.
+- **Proof verification is `POST /api/v4/verify/{rp_id}` on `developer.world.org`**, with the complete
+  IDKit result forwarded verbatim.
 - **`ReceiverTemplate.sol` is not an npm package.** Chainlink publishes it as a copy-paste file, so
-  `contracts/src/ReceiverTemplate.sol` is an independent implementation of the documented behaviour
-  (forwarder check, optional workflow-owner/name gates, abstract `_processReport`). Its metadata
-  decoding matches `KeystoneFeedDefaultMetadataLib` from `@chainlink/contracts`.
-- **In a TEE handler `runtime.report()` is not available.** `TeeRuntime` exposes `reportFromDon()`
-  and `usingTheDons()`; the workflow crosses back to the DON explicitly before signing a report.
-- **`cre init` requires authentication.** The `cre-workflow/` tree here is hand-written against the
-  SDK's actual types (it typechecks against `@chainlink/cre-sdk@1.20.0`); reconcile it with the
-  generated scaffold after `cre login`.
+  `contracts/src/automation/ReceiverTemplate.sol` is an independent implementation of the documented
+  behaviour.
+- **The CRE SDK exports `TxStatus` but not `ReceiverContractExecutionStatus`.** The workflow pins
+  `SUCCESS = 0` from the protobuf and checks both statuses, because the forwarder's transaction can
+  succeed while the receiver reverts inside it.
 
 ## Known gaps
 
-- **The scoring function is keyword matching — treat every score it produces as meaningless.** It
-  checks whether the word before each colon in the rubric appears anywhere in the submission, so
-  typing "pull request, tests, demo, docs" scores 100%. What the build demonstrates is *where*
-  judgement runs (sealed, verdict-only) and that only a DON-signed report can move money — not the
-  judgement itself. [docs/scoring-design.md](docs/scoring-design.md) is the plan to fix it:
-  verifiable checks against real sources, then model judgement, then the granter's final call.
-- **`lib/store.ts` is in-memory.** Evidence bundles and execution records do not survive a restart
-  and are per-isolate on serverless. Chain state is unaffected.
-- **CRE execution polling is best-effort.** There is no stable public REST endpoint for reading an
-  execution by id, so `/api/execution-status` reconciles against on-chain milestone state and treats
-  that as authoritative.
-- **The escrow asset is an ERC-20.** On Arc, USDC is also the native gas token; if you want the
-  escrow to hold native USDC instead of an ERC-20 representation, `GrantEscrow` needs a native-value
-  variant of the transfer paths.
-- **The Selfie Check half-loop ends at the QR.** Everything up to and including the connector link is
-  verified — signed `rp_context`, an accepted request, a scannable QR. Completing it requires a
-  person with World App, so the returned proof has not been round-tripped through
-  `/api/verify-selfie` and on into `changePayoutWallet` yet. The contract side of that path is
-  covered by tests (valid attestation, forged signature, replayed nullifier, expired deadline).
+- **The CRE workflow isn't autonomous yet.** It needs deploy access; until then settlement is by
+  anyone pressing Settle, or the workflow run from the CLI.
+- **Testnet disputes are answered through UMA's sandbox oracle, which anyone can answer.** That's a
+  demo stand-in for UMA's token-holder vote, and the UI labels it as such. On Base mainnet the same
+  dispute goes to the real vote.
+- **A person can change their payout wallet only once.** World ID nullifiers are stable per person per
+  action, and the contract spends them on first use.
+- **A claim attestation is tied to the grant's claim nonce.** If another claim on the same grant lands
+  between signing and submitting, the grantee prepares it again.
+- **One Redis key holds every application.** Fine at grant-round scale, wrong at ten thousand.
+- **No audit.** The contracts are tested, including against live UMA, but nothing here has been
+  reviewed for mainnet money.

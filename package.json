@@ -2,18 +2,17 @@
   "name": "grantlane",
   "version": "0.1.0",
   "private": true,
-  "description": "Milestone grant escrow — confidential scoring on Chainlink CRE, settlement on Arc, identity by World ID.",
+  "description": "Milestone grant escrow — bonded claims settled by UMA's optimistic oracle on Base, a Chainlink CRE settlement workflow, identity by World ID.",
   "scripts": {
     "dev": "npm --prefix apps/web run dev",
     "build": "npm --prefix apps/web run build",
     "typecheck": "npm --prefix apps/web run typecheck",
     "gen:abi": "node scripts/gen-abi.mjs",
-    "contracts:build": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts && forge build'",
-    "contracts:test": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts && forge test -vv'",
-    "workflow:typecheck": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.bun/bin:$PATH; cd cre-workflow/grant-evaluation-workflow && bun x tsc --noEmit'",
-    "workflow:simulate": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.local/bin:$HOME/.bun/bin:$PATH; cd cre-workflow && cre workflow simulate grant-evaluation-workflow --target staging-settings --http-payload ./grant-evaluation-workflow/simulation/milestone-approved.json'",
-    "workflow:build": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.local/bin:$HOME/.bun/bin:$PATH; cd cre-workflow && cre workflow build grant-evaluation-workflow --target staging-settings'",
-    "workflow:broadcast": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.local/bin:$HOME/.bun/bin:$PATH; cd cre-workflow && cre workflow simulate grant-evaluation-workflow --target staging-settings --http-payload ./grant-evaluation-workflow/simulation/milestone-approved.json --broadcast'",
-    "workflow:listen": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.local/bin:$HOME/.bun/bin:$PATH; cd cre-workflow && cre workflow simulate grant-evaluation-workflow --target staging-settings --listen --http-trigger-port 2000 --broadcast'"
+    "contracts:build": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts; forge build'",
+    "contracts:test": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.foundry/bin:$PATH; cd contracts; forge test -vv'",
+    "workflow:typecheck": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.bun/bin:$PATH; cd cre-workflow/settlement-workflow; bun x tsc --noEmit'",
+    "workflow:build": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.local/bin:$HOME/.bun/bin:$PATH; cd cre-workflow; cre workflow build settlement-workflow --target staging-settings'",
+    "workflow:simulate": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.local/bin:$HOME/.bun/bin:$PATH; cd cre-workflow; cre workflow simulate ./settlement-workflow --target staging-settings --non-interactive --trigger-index 0 -e .env'",
+    "workflow:broadcast": "wsl -d Ubuntu -- bash -lc 'export PATH=$HOME/.local/bin:$HOME/.bun/bin:$PATH; cd cre-workflow; cre workflow simulate ./settlement-workflow --target staging-settings --non-interactive --trigger-index 0 --broadcast -e .env'"
   }
 }

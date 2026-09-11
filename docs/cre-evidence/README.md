@@ -1,5 +1,12 @@
 # Chainlink CRE evidence — GrantLane
 
+> **Historical.** This documents GrantLane's first design: a CRE workflow that scored milestone
+> evidence inside a TEE and paid on Arc Testnet (chain 5042002). It was retired because keyword
+> scoring couldn't judge whether work was good. Milestones are now bonded claims settled through UMA
+> on Base Sepolia, and CRE's role is the settlement workflow (see the main README and
+> [../base-sepolia-evidence.md](../base-sepolia-evidence.md)). The runs recorded here are still real
+> transactions on Arc, and the workflow source they refer to is in git history.
+
 This directory holds the artefacts required for the Chainlink track: simulation output, execution
 logs, and the reasoning behind how the workflow is structured.
 

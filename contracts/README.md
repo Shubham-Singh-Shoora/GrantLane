@@ -1,66 +1,23 @@
-## Foundry
+# GrantLane contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Foundry project. Solidity 0.8.24, OpenZeppelin 5.1.
 
-Foundry consists of:
+| File | What it is |
+| --- | --- |
+| `src/GrantEscrow.sol` | Milestone escrow. Claims are UMA Optimistic Oracle V3 assertions with a USDC bond; UMA's callbacks credit or reopen the milestone; settlement is permissionless; payouts are withdrawn. Selfie Check attestations (EIP-712) gate claims and payout-wallet changes. |
+| `src/automation/SettlementReceiver.sol` | Receives a CRE report and passes it to `GrantEscrow.performUpkeep`. Can call nothing else. |
+| `src/automation/ReceiverTemplate.sol` | Forwarder and workflow-owner checks for CRE reports. |
+| `src/interfaces/` | Minimal UMA and Automation-compatible interfaces. |
+| `test/GrantEscrow.t.sol` | 45 tests against a mock oracle that follows UMA's bond and callback rules. |
+| `test/SettlementReceiver.t.sol` | 8 receiver tests. |
+| `test/GrantEscrow.fork.t.sol` | 7 tests against the real UMA oracle and Circle USDC on a Base Sepolia fork. |
+| `script/Deploy.s.sol` | Deploys the escrow (Base Sepolia defaults). |
+| `script/DeploySettlementReceiver.s.sol` | Deploys the receiver against the simulation forwarder. |
+| `script/Demo.s.sol` | Drives a live escrow one step per call: fund, claim, dispute, resolve, settle, withdraw, status. |
+| `script/UmaSandbox.sol` | Rebuilds the dispute request data UMA's testnet oracle needs to be answered. |
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
+```bash
+forge test                       # fork tests skip unless BASE_SEPOLIA_RPC_URL is set
 ```
 
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+See the repository README for deployment and the demo commands.

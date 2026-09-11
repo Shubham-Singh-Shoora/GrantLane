@@ -34,30 +34,30 @@ const STEPS = [
   {
     n: "02",
     title: "The granter escrows",
-    body: "They read the proposal, adjust the scope they're willing to fund, and lock the whole grant on Arc up front. The money is committed before any work starts.",
+    body: "They read the proposal, adjust the scope they're willing to fund, and lock the whole grant on Base up front — along with a hash of the milestone terms, so the terms can't be edited later.",
   },
   {
     n: "03",
-    title: "The builder ships",
-    body: "When a milestone is done they verify they're human again and submit evidence. Only a hash goes on-chain — the bundle itself goes to the scoring enclave.",
+    title: "The builder claims",
+    body: "When a milestone is done they verify they're human again, publish their evidence, and claim the milestone on UMA with a small USDC bond.",
   },
   {
     n: "04",
-    title: "It pays itself",
-    body: "A sealed enclave scores the evidence against the agreed criteria and hands only a verdict back. A DON-signed report releases the USDC. Nobody presses pay.",
+    title: "It pays unless challenged",
+    body: "The claim is open to dispute for a set window. If nobody disputes it, it pays out. If someone does, UMA decides — and whoever was wrong loses their bond.",
   },
 ];
 
 const GUARANTEES = [
   {
-    kicker: "Confidential",
-    title: "No one reads your submission",
-    body: "Scoring happens inside an AWS Nitro enclave. The reviewer's rubric goes in as a secret and the evidence goes in over confidential HTTP; only the verdict comes back out. The fund cannot read what you sent — and neither can we.",
+    kicker: "Bonded",
+    title: "Lying costs money",
+    body: "Every claim puts up a USDC bond. A claim that turns out to be false loses its bond to whoever proved it wrong — so claiming work you didn't do is a bet you expect to lose.",
   },
   {
-    kicker: "Automatic",
-    title: "No one has to press pay",
-    body: "The escrow accepts exactly one thing: a report signed by a Chainlink DON, delivered through the KeystoneForwarder. There is no owner function, no multisig, no admin key that can release your money — or withhold it.",
+    kicker: "Disputable",
+    title: "Anyone can check, anyone can challenge",
+    body: "The evidence is public, linked from the claim and hashed on-chain. The granter — or anyone — can dispute inside the window, and UMA's optimistic oracle settles it. No admin key can release the money, or hold it back.",
   },
   {
     kicker: "Human",
@@ -75,16 +75,16 @@ export function Landing() {
       <section className="flex flex-wrap items-center gap-10 pb-16 pt-14">
         <div className="min-w-0 flex-1 basis-[380px]">
           <Reveal>
-            <p className="card-kicker m-0">Milestone grants, settled on Arc</p>
+            <p className="card-kicker m-0">Milestone grants, settled on Base</p>
             <h1 className="mb-5 mt-2 text-[clamp(38px,6vw,58px)] leading-[1.02]">
               Fund the work.
               <br />
               Not the paperwork.
             </h1>
             <p className="m-0 max-w-[52ch] text-[16px] leading-relaxed" style={{ opacity: 0.78 }}>
-              GrantLane escrows a grant up front and releases it milestone by milestone — judged
-              confidentially, settled automatically. The reviewer never reads your submission, and
-              nobody has to remember to pay you.
+              GrantLane escrows a grant up front and releases it milestone by milestone. A builder claims a milestone
+              with evidence and a bond; if nobody disputes the claim in time, it pays out. Lying is expensive, and
+              nobody has to approve every milestone by hand.
             </p>
           </Reveal>
 
@@ -125,8 +125,8 @@ export function Landing() {
                 "Every milestone waits on a human to read it, agree it counts, and remember to trigger a transfer.",
               ],
               [
-                "Submitting costs you privacy",
-                "To prove you did the work you hand over the work — to a committee, in full, before you're paid for it.",
+                "Or it's paid on trust",
+                "The alternative to slow review is paying on someone's say-so — and then nothing stops a claim that the work is done when it isn't.",
               ],
               [
                 "Rounds attract scripts",
@@ -149,7 +149,7 @@ export function Landing() {
         <Reveal>
           <p className="card-kicker m-0">How it works</p>
           <h2 className="mb-8 mt-2 max-w-[20ch] text-[clamp(26px,4vw,36px)]">
-            Four steps, and only one of them needs a person.
+            Four steps. Nobody approves a milestone by hand.
           </h2>
         </Reveal>
 
@@ -214,8 +214,14 @@ export function Landing() {
           </h2>
           <dl className="m-0 grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
             {[
-              ["Arc", "Settlement. USDC is the native gas token, so the escrow and the fees are the same asset."],
-              ["Chainlink CRE", "Judgement. Scoring runs in a Nitro TEE; a DON signs the report that moves the money."],
+              [
+                "Base + UMA",
+                "Settlement. The escrow lives on Base; each claim is an optimistic assertion on UMA — bonded, public, and open to dispute.",
+              ],
+              [
+                "Chainlink CRE",
+                "Upkeep. A cron workflow finds claims whose window has closed and settles them, following Chainlink's Automation-to-CRE path.",
+              ],
               ["World ID", "Personhood. Selfie Check proves a live human without revealing which one."],
             ].map(([name, body]) => (
               <div key={name}>
@@ -236,7 +242,7 @@ export function Landing() {
             Escrow it once. Let the work release it.
           </h2>
           <p className="m-0 mx-auto max-w-[46ch] text-[14.5px]" style={{ opacity: 0.75 }}>
-            Applications take a few minutes and a Selfie Check. Grants settle on Arc Testnet.
+            Applications take a few minutes and a Selfie Check. Grants run on Base Sepolia testnet.
           </p>
           <div className="mt-2 flex flex-wrap justify-center gap-2.5">
             <Link href="/apply" className="btn-primary" style={{ fontSize: 15, padding: "12px 24px" }}>

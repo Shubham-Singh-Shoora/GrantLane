@@ -8,13 +8,11 @@
 
 staging-settings:
   rpcs:
-    # Base Sepolia: the UMA GrantEscrow and its SettlementReceiver live here.
+    # Base Sepolia: GrantEscrow and its SettlementReceiver live here, and the
+    # settlement workflow reads and writes here.
     - chain-name: ethereum-testnet-sepolia-base-1
       url: https://sepolia.base.org
-    # Arc: only the retired grant-evaluation workflow still points here.
-    - chain-name: arc-testnet
-      url: https://rpc.testnet.arc.io
-    # Workflow Registry chain — where the workflow itself is registered.
+    # Workflow Registry chain — where a deployed workflow is registered.
     - chain-name: ethereum-testnet-sepolia
       url: https://ethereum-sepolia-rpc.publicnode.com
 
@@ -23,7 +21,5 @@ production-settings:
   rpcs:
     - chain-name: ethereum-testnet-sepolia-base-1
       url: https://sepolia.base.org
-    - chain-name: arc-testnet
-      url: https://rpc.testnet.arc.io
     - chain-name: ethereum-testnet-sepolia
       url: https://ethereum-sepolia-rpc.publicnode.com

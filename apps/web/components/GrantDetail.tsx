@@ -1,28 +1,30 @@
 "use client";
 
 import Link from "next/link";
+import type { Address } from "viem";
 import { useAccount } from "wagmi";
-import { formatUsdc } from "@/lib/contracts";
-import { shortAddress } from "@/lib/status";
+import { formatUsdc, STATUS, type EscrowTerms } from "@/lib/contracts";
+import { formatDuration, shortAddress } from "@/lib/status";
 import { EscrowStatus, type GrantView } from "./EscrowStatus";
 import { MilestoneCard, type MilestoneView } from "./MilestoneCard";
 import { PayoutWalletPanel } from "./PayoutWalletPanel";
+import { WithdrawPanel } from "./WithdrawPanel";
 
 export function GrantDetail({
   grant,
   milestones,
-  escrowAddress,
+  terms,
 }: {
   grant: GrantView;
   milestones: MilestoneView[];
-  escrowAddress: `0x${string}`;
+  terms: EscrowTerms;
 }) {
   const { address } = useAccount();
   const isGrantee = !!address && address.toLowerCase() === grant.grantee.toLowerCase();
 
   const total = BigInt(grant.totalAmount);
   const released = BigInt(grant.releasedAmount);
-  const paid = milestones.filter((m) => m.status === 4).length;
+  const approved = milestones.filter((m) => m.status === STATUS.Approved).length;
 
   return (
     <div className="animate-rise">
@@ -41,8 +43,8 @@ export function GrantDetail({
             aria-hidden
           />
           <span>
-            Scoped to your wallet <strong className="mono">{shortAddress(grant.grantee)}</strong> — you can submit
-            evidence and change the payout wallet.
+            Scoped to your wallet <strong className="mono">{shortAddress(grant.grantee)}</strong> — you can claim
+            milestones and change the payout wallet.
           </span>
         </div>
       )}
@@ -58,7 +60,7 @@ export function GrantDetail({
           <h1 className="mb-2 text-[38px]">Grant #{grant.grantId}</h1>
           <p className="m-0 text-[15px]" style={{ opacity: 0.7 }}>
             <span className="mono">{shortAddress(grant.grantee, 10, 6)}</span> ·{" "}
-            {isGrantee ? "you are the grantee" : "connect the grantee wallet to submit evidence"}
+            {isGrantee ? "you are the grantee" : "connect the grantee wallet to claim milestones"}
           </p>
         </div>
         <div className="text-right">
@@ -71,12 +73,17 @@ export function GrantDetail({
 
       <div className="flex flex-wrap items-start gap-5">
         <div className="min-w-0 flex-1 basis-[460px]">
-          <div className="mb-3.5 flex items-baseline gap-2.5">
+          <div className="mb-1.5 flex items-baseline gap-2.5">
             <h3 className="m-0">Milestones</h3>
             <span className="text-[13px]" style={{ opacity: 0.55 }}>
-              {paid} of {milestones.length} paid
+              {approved} of {milestones.length} approved
             </span>
           </div>
+          <p className="m-0 mb-3.5 max-w-[62ch] text-[13px]" style={{ opacity: 0.65 }}>
+            A claim posts a {formatUsdc(BigInt(terms.bond))} USDC bond and is open to dispute for{" "}
+            {formatDuration(Number(terms.liveness))}. Undisputed claims pay out; disputed ones go to UMA, and whoever is
+            wrong loses their bond.
+          </p>
 
           {/* The rail runs behind the numbered nodes; each node punches a ring
               of page background so the line appears to pass under it. */}
@@ -91,7 +98,8 @@ export function GrantDetail({
                 <MilestoneCard
                   key={milestone.milestoneId}
                   grantId={grant.grantId}
-                  escrowAddress={escrowAddress}
+                  grantee={grant.grantee as Address}
+                  terms={terms}
                   milestone={milestone}
                   isGrantee={isGrantee}
                 />
@@ -101,10 +109,11 @@ export function GrantDetail({
         </div>
 
         <aside className="flex min-w-0 max-w-[380px] flex-1 basis-[300px] flex-col gap-4 pt-[42px]">
-          <EscrowStatus grant={grant} />
+          <EscrowStatus grant={grant} terms={terms} />
+          <WithdrawPanel escrowAddress={terms.escrowAddress} />
           <PayoutWalletPanel
             grantId={grant.grantId}
-            escrowAddress={escrowAddress}
+            escrowAddress={terms.escrowAddress}
             currentPayoutWallet={grant.payoutWallet}
             isGrantee={isGrantee}
           />

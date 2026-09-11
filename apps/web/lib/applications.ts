@@ -76,6 +76,13 @@ export type Application = {
   /** Set once createGrant lands on-chain. */
   grantId: string | null;
   fundingTxHash: string | null;
+  /** keccak256 of the funded milestone terms, as committed by createGrant. */
+  termsHash?: Hex | null;
+  /**
+   * The escrow the grant id belongs to. Grant ids restart at 0 on every deployment,
+   * so an id alone would attach an old grant's milestones to a new one.
+   */
+  escrowAddress?: string | null;
 };
 
 async function load(): Promise<Application[]> {
@@ -148,8 +155,13 @@ export async function updateApplication(id: string, patch: Partial<Application>)
   return next;
 }
 
-/** Milestone metadata for a funded grant, so the detail page can show criteria. */
-export async function milestonesForGrant(grantId: string): Promise<ProposedMilestone[] | null> {
-  const application = await getApplicationByGrantId(grantId);
-  return application?.approvedMilestones ?? application?.proposedMilestones ?? null;
+/**
+ * The funded milestone terms for a grant on a given escrow — what its termsHash
+ * commits to, and what a disputed claim is judged against.
+ */
+export async function milestonesForGrant(grantId: string, escrowAddress: string): Promise<ProposedMilestone[] | null> {
+  const application = (await load()).find(
+    (a) => a.grantId === grantId && a.escrowAddress?.toLowerCase() === escrowAddress.toLowerCase(),
+  );
+  return application?.approvedMilestones ?? null;
 }

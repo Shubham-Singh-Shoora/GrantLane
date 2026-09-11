@@ -1,5 +1,5 @@
-import { createPublicClient, http, type Address } from "viem";
-import { arcTestnet, ARC_RPC_URL } from "./chain";
+import { createPublicClient, http, type Address, type Hex } from "viem";
+import { appChain, RPC_URL } from "./chain";
 import { grantEscrowAbi } from "./grantEscrowAbi";
 
 export { grantEscrowAbi };
@@ -20,30 +20,51 @@ export function usdcAddress(): Address {
   return requiredAddress(process.env.NEXT_PUBLIC_USDC_ADDRESS, "NEXT_PUBLIC_USDC_ADDRESS");
 }
 
+/** Optional: the CRE workflow's SettlementReceiver, shown on the admin page when set. */
+export function settlementReceiverAddress(): Address | null {
+  const value = process.env.NEXT_PUBLIC_SETTLEMENT_RECEIVER_ADDRESS;
+  return value && /^0x[0-9a-fA-F]{40}$/.test(value) ? (value as Address) : null;
+}
+
 export const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(ARC_RPC_URL),
+  chain: appChain,
+  transport: http(RPC_URL),
 });
 
-export const MILESTONE_STATUS = ["Pending", "Submitted", "Approved", "Rejected", "Paid"] as const;
-export type MilestoneStatus = (typeof MILESTONE_STATUS)[number];
+/**
+ * Display labels for GrantEscrow.MilestoneStatus, in enum order. "Claimed" is the
+ * contract's Asserted: a claim is on UMA and inside its dispute window.
+ */
+export const MILESTONE_STATUS = ["Pending", "Claimed", "Disputed", "Approved", "Rejected"] as const;
+export const STATUS = { Pending: 0, Claimed: 1, Disputed: 2, Approved: 3, Rejected: 4 } as const;
 
 export type Grant = {
   funder: Address;
   grantee: Address;
   payoutWallet: Address;
-  token: Address;
   totalAmount: bigint;
   releasedAmount: bigint;
+  openClaims: number;
   active: boolean;
+  termsHash: Hex;
 };
 
 export type Milestone = {
   amount: bigint;
-  paidAmount: bigint;
+  expiresAt: bigint;
   status: number;
-  scoreBps: number;
-  evidenceHash: `0x${string}`;
+  assertionId: Hex;
+  evidenceHash: Hex;
+};
+
+/** What a milestone card needs to send transactions; strings so it crosses the server/client boundary. */
+export type EscrowTerms = {
+  escrowAddress: Address;
+  usdcAddress: Address;
+  /** Claim and dispute bond, USDC base units. */
+  bond: string;
+  /** Dispute window, seconds. */
+  liveness: string;
 };
 
 export async function readGrant(grantId: bigint): Promise<Grant> {
@@ -72,7 +93,16 @@ export async function readGrantCount(): Promise<bigint> {
   })) as bigint;
 }
 
-/** USDC has 6 decimals on Arc, both as the native gas token and as the escrow ERC-20. */
+export async function readEscrowTerms(): Promise<{ bond: bigint; liveness: bigint }> {
+  const address = grantEscrowAddress();
+  const [bond, liveness] = await Promise.all([
+    publicClient.readContract({ address, abi: grantEscrowAbi, functionName: "bond" }),
+    publicClient.readContract({ address, abi: grantEscrowAbi, functionName: "liveness" }),
+  ]);
+  return { bond: bond as bigint, liveness: BigInt(liveness as bigint) };
+}
+
+/** Circle USDC has 6 decimals on Base, like everywhere else. */
 export function formatUsdc(amount: bigint): string {
   const negative = amount < 0n;
   const abs = negative ? -amount : amount;

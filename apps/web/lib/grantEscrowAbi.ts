@@ -6,16 +6,88 @@ export const grantEscrowAbi = [
     "type": "constructor",
     "inputs": [
       {
-        "name": "forwarderAddress",
+        "name": "oracle_",
         "type": "address",
-        "internalType": "address"
+        "internalType": "contract IOptimisticOracleV3"
+      },
+      {
+        "name": "usdc_",
+        "type": "address",
+        "internalType": "contract IERC20"
       },
       {
         "name": "attestor_",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "liveness_",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "bond_",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "MAX_MILESTONES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_SETTLE_BATCH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "assertionDisputedCallback",
+    "inputs": [
+      {
+        "name": "assertionId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "assertionResolvedCallback",
+    "inputs": [
+      {
+        "name": "assertionId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "assertedTruthfully",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -27,6 +99,32 @@ export const grantEscrowAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "awaitingSettlement",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "bond",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -46,23 +144,73 @@ export const grantEscrowAbi = [
         "internalType": "address"
       },
       {
-        "name": "nullifierHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "signature",
-        "type": "bytes",
-        "internalType": "bytes"
+        "name": "selfie",
+        "type": "tuple",
+        "internalType": "struct GrantEscrow.SelfieAttestation",
+        "components": [
+          {
+            "name": "nullifierHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "deadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "signature",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkUpkeep",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "upkeepNeeded",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "performData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "claimNonce",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -87,14 +235,14 @@ export const grantEscrowAbi = [
         "internalType": "address"
       },
       {
-        "name": "token",
-        "type": "address",
-        "internalType": "contract IERC20"
-      },
-      {
         "name": "amounts",
         "type": "uint128[]",
         "internalType": "uint128[]"
+      },
+      {
+        "name": "termsHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [
@@ -194,11 +342,6 @@ export const grantEscrowAbi = [
             "internalType": "address"
           },
           {
-            "name": "token",
-            "type": "address",
-            "internalType": "contract IERC20"
-          },
-          {
             "name": "totalAmount",
             "type": "uint128",
             "internalType": "uint128"
@@ -209,9 +352,19 @@ export const grantEscrowAbi = [
             "internalType": "uint128"
           },
           {
+            "name": "openClaims",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
             "name": "active",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "termsHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           }
         ]
       }
@@ -240,9 +393,9 @@ export const grantEscrowAbi = [
             "internalType": "uint128"
           },
           {
-            "name": "paidAmount",
-            "type": "uint128",
-            "internalType": "uint128"
+            "name": "expiresAt",
+            "type": "uint64",
+            "internalType": "uint64"
           },
           {
             "name": "status",
@@ -250,9 +403,9 @@ export const grantEscrowAbi = [
             "internalType": "enum GrantEscrow.MilestoneStatus"
           },
           {
-            "name": "scoreBps",
-            "type": "uint16",
-            "internalType": "uint16"
+            "name": "assertionId",
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "evidenceHash",
@@ -260,6 +413,32 @@ export const grantEscrowAbi = [
             "internalType": "bytes32"
           }
         ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "identifier",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "liveness",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -298,21 +477,16 @@ export const grantEscrowAbi = [
   },
   {
     "type": "function",
-    "name": "onReport",
-    "inputs": [
+    "name": "oracle",
+    "inputs": [],
+    "outputs": [
       {
-        "name": "metadata",
-        "type": "bytes",
-        "internalType": "bytes"
-      },
-      {
-        "name": "report",
-        "type": "bytes",
-        "internalType": "bytes"
+        "name": "",
+        "type": "address",
+        "internalType": "contract IOptimisticOracleV3"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -348,49 +522,42 @@ export const grantEscrowAbi = [
   },
   {
     "type": "function",
-    "name": "renounceOwnership",
-    "inputs": [],
+    "name": "pendingWithdrawals",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "performUpkeep",
+    "inputs": [
+      {
+        "name": "performData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "s_expectedAuthor",
+    "name": "renounceOwnership",
     "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "s_expectedWorkflowName",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes10",
-        "internalType": "bytes10"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "s_forwarderAddress",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -407,12 +574,17 @@ export const grantEscrowAbi = [
   },
   {
     "type": "function",
-    "name": "setExpectedAuthor",
+    "name": "settle",
     "inputs": [
       {
-        "name": "author",
-        "type": "address",
-        "internalType": "address"
+        "name": "grantId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "milestoneId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -420,33 +592,7 @@ export const grantEscrowAbi = [
   },
   {
     "type": "function",
-    "name": "setExpectedWorkflowName",
-    "inputs": [
-      {
-        "name": "workflowName",
-        "type": "bytes10",
-        "internalType": "bytes10"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setForwarderAddress",
-    "inputs": [
-      {
-        "name": "forwarderAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "submitEvidence",
+    "name": "submitMilestone",
     "inputs": [
       {
         "name": "grantId",
@@ -459,32 +605,46 @@ export const grantEscrowAbi = [
         "internalType": "uint256"
       },
       {
+        "name": "evidenceURI",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
         "name": "evidenceHash",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "supportsInterface",
-    "inputs": [
+      },
       {
-        "name": "interfaceId",
-        "type": "bytes4",
-        "internalType": "bytes4"
+        "name": "selfie",
+        "type": "tuple",
+        "internalType": "struct GrantEscrow.SelfieAttestation",
+        "components": [
+          {
+            "name": "nullifierHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "deadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "signature",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
       }
     ],
     "outputs": [
       {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "assertionId",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
-    "stateMutability": "pure"
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -498,6 +658,19 @@ export const grantEscrowAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "usdc",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IERC20"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -517,6 +690,19 @@ export const grantEscrowAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "withdraw",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "event",
@@ -539,90 +725,27 @@ export const grantEscrowAbi = [
   },
   {
     "type": "event",
+    "name": "AutoSettleFailed",
+    "inputs": [
+      {
+        "name": "assertionId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "reason",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "EIP712DomainChanged",
     "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EvidenceSubmitted",
-    "inputs": [
-      {
-        "name": "grantId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "milestoneId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "evidenceHash",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ExpectedAuthorUpdated",
-    "inputs": [
-      {
-        "name": "previous",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "current",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ExpectedWorkflowNameUpdated",
-    "inputs": [
-      {
-        "name": "previous",
-        "type": "bytes10",
-        "indexed": false,
-        "internalType": "bytes10"
-      },
-      {
-        "name": "current",
-        "type": "bytes10",
-        "indexed": false,
-        "internalType": "bytes10"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ForwarderAddressUpdated",
-    "inputs": [
-      {
-        "name": "previous",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "current",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
     "anonymous": false
   },
   {
@@ -673,16 +796,16 @@ export const grantEscrowAbi = [
         "internalType": "address"
       },
       {
-        "name": "token",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
         "name": "totalAmount",
         "type": "uint128",
         "indexed": false,
         "internalType": "uint128"
+      },
+      {
+        "name": "termsHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -704,13 +827,19 @@ export const grantEscrowAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "scoreBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
+        "name": "assertionId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
       },
       {
-        "name": "payoutAmount",
+        "name": "payoutWallet",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
         "type": "uint128",
         "indexed": false,
         "internalType": "uint128"
@@ -720,7 +849,7 @@ export const grantEscrowAbi = [
   },
   {
     "type": "event",
-    "name": "MilestonePaid",
+    "name": "MilestoneClaimed",
     "inputs": [
       {
         "name": "grantId",
@@ -735,16 +864,59 @@ export const grantEscrowAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "to",
-        "type": "address",
+        "name": "assertionId",
+        "type": "bytes32",
         "indexed": true,
-        "internalType": "address"
+        "internalType": "bytes32"
       },
       {
-        "name": "amount",
-        "type": "uint128",
+        "name": "evidenceHash",
+        "type": "bytes32",
         "indexed": false,
-        "internalType": "uint128"
+        "internalType": "bytes32"
+      },
+      {
+        "name": "evidenceURI",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "expiresAt",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "nullifierHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MilestoneDisputed",
+    "inputs": [
+      {
+        "name": "grantId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "milestoneId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "assertionId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -766,10 +938,10 @@ export const grantEscrowAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "scoreBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
+        "name": "assertionId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -825,6 +997,25 @@ export const grantEscrowAbi = [
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "Withdrawal",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "AmountZero",
     "inputs": []
@@ -842,11 +1033,6 @@ export const grantEscrowAbi = [
   },
   {
     "type": "error",
-    "name": "AttestorNotSet",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "BadAttestation",
     "inputs": [
       {
@@ -858,6 +1044,38 @@ export const grantEscrowAbi = [
         "name": "expected",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BondBelowMinimum",
+    "inputs": [
+      {
+        "name": "bond",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minimum",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BondZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ClaimsOpen",
+    "inputs": [
+      {
+        "name": "openClaims",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ]
   },
@@ -890,7 +1108,17 @@ export const grantEscrowAbi = [
   },
   {
     "type": "error",
+    "name": "EmptyEvidence",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "EmptyMilestones",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyTerms",
     "inputs": []
   },
   {
@@ -906,56 +1134,24 @@ export const grantEscrowAbi = [
   },
   {
     "type": "error",
-    "name": "InvalidAuthor",
-    "inputs": [
-      {
-        "name": "author",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "expected",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidForwarder",
-    "inputs": [
-      {
-        "name": "caller",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "expected",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "InvalidShortString",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "InvalidWorkflowName",
+    "name": "LivenessNotOver",
     "inputs": [
       {
-        "name": "name",
-        "type": "bytes10",
-        "internalType": "bytes10"
-      },
-      {
-        "name": "expected",
-        "type": "bytes10",
-        "internalType": "bytes10"
+        "name": "expiresAt",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "LivenessZero",
+    "inputs": []
   },
   {
     "type": "error",
@@ -970,7 +1166,7 @@ export const grantEscrowAbi = [
   },
   {
     "type": "error",
-    "name": "MilestoneNotSubmitted",
+    "name": "MilestoneNotUnderReview",
     "inputs": [
       {
         "name": "status",
@@ -1000,6 +1196,22 @@ export const grantEscrowAbi = [
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "NotOracle",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NothingToWithdraw",
+    "inputs": []
   },
   {
     "type": "error",
@@ -1036,22 +1248,6 @@ export const grantEscrowAbi = [
   },
   {
     "type": "error",
-    "name": "PayoutExceedsMilestone",
-    "inputs": [
-      {
-        "name": "requested",
-        "type": "uint128",
-        "internalType": "uint128"
-      },
-      {
-        "name": "available",
-        "type": "uint128",
-        "internalType": "uint128"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
@@ -1074,6 +1270,33 @@ export const grantEscrowAbi = [
         "name": "str",
         "type": "string",
         "internalType": "string"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "StringsInsufficientHexLength",
+    "inputs": [
+      {
+        "name": "value",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "TooManyMilestones",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },

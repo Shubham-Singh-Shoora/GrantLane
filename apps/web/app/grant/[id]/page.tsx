@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { grantEscrowAddress, readGrant, readMilestones } from "@/lib/contracts";
+import { grantEscrowAddress, readEscrowTerms, readGrant, readMilestones, usdcAddress } from "@/lib/contracts";
 import { GrantDetail } from "@/components/GrantDetail";
 import { SetupNotice } from "@/components/SetupNotice";
 import { milestonesForGrant } from "@/lib/applications";
@@ -13,31 +13,41 @@ export default async function GrantPage({ params }: { params: { id: string } }) 
 
   try {
     const escrowAddress = grantEscrowAddress();
-    const [grant, milestones] = await Promise.all([readGrant(grantId), readMilestones(grantId)]);
-    const metadata = await milestonesForGrant(params.id);
+    const [grant, milestones, escrowTerms] = await Promise.all([
+      readGrant(grantId),
+      readMilestones(grantId),
+      readEscrowTerms(),
+    ]);
+    const metadata = await milestonesForGrant(params.id, escrowAddress);
 
     return (
       <GrantDetail
-        escrowAddress={escrowAddress}
+        terms={{
+          escrowAddress,
+          usdcAddress: usdcAddress(),
+          bond: escrowTerms.bond.toString(),
+          liveness: escrowTerms.liveness.toString(),
+        }}
         grant={{
           grantId: params.id,
           funder: grant.funder,
           grantee: grant.grantee,
           payoutWallet: grant.payoutWallet,
-          token: grant.token,
           totalAmount: grant.totalAmount.toString(),
           releasedAmount: grant.releasedAmount.toString(),
+          openClaims: Number(grant.openClaims),
           active: grant.active,
+          termsHash: grant.termsHash,
         }}
         milestones={milestones.map((m, i) => ({
           milestoneId: i,
           amount: m.amount.toString(),
-          paidAmount: m.paidAmount.toString(),
           status: Number(m.status),
-          scoreBps: Number(m.scoreBps),
+          expiresAt: m.expiresAt.toString(),
+          assertionId: m.assertionId,
           evidenceHash: m.evidenceHash,
           // Titles and criteria live off-chain in the funded application; the
-          // contract only ever knew the amounts.
+          // contract holds the amounts and a hash of these terms.
           title: metadata?.[i]?.title,
           criteria: metadata?.[i]?.criteria,
         }))}

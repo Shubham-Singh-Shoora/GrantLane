@@ -1,135 +1,275 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useAccount, useWriteContract } from "wagmi";
-import { grantEscrowAbi, formatUsdc } from "@/lib/contracts";
-import { statusName, statusNodeColors, statusTagClass } from "@/lib/status";
-import { SelfieGate } from "./SelfieGate";
+import { useRouter } from "next/navigation";
+import { erc20Abi, type Address, type Hex } from "viem";
+import { useAccount } from "wagmi";
+import { formatUsdc, grantEscrowAbi, publicClient, STATUS, type EscrowTerms } from "@/lib/contracts";
+import { formatDuration, statusName, statusNodeColors, statusTagClass } from "@/lib/status";
+import {
+  ASSERT_TRUTH,
+  UMA_FALSE,
+  UMA_OOV3_ADDRESS,
+  UMA_SANDBOX_ORACLE_ADDRESS,
+  UMA_TRUE,
+  disputeAncillaryData,
+  umaOptimisticOracleAbi,
+  umaSandboxOracleAbi,
+} from "@/lib/uma";
+import { txErrorMessage, useChainTx } from "@/lib/useChainTx";
 import { clearTicket } from "@/lib/ticket-cache";
+import { SelfieGate } from "./SelfieGate";
 
 export type MilestoneView = {
   milestoneId: number;
   amount: string;
-  paidAmount: string;
   status: number;
-  scoreBps: number;
-  evidenceHash: string;
-  /** From the application the granter funded; the chain stores only amounts. */
+  /** Unix seconds: end of the current claim's dispute window. "0" until first claimed. */
+  expiresAt: string;
+  assertionId: Hex;
+  evidenceHash: Hex;
+  /** From the funded application; the chain stores only amounts and a terms hash. */
   title?: string;
   criteria?: string;
 };
 
-type ExecutionView = {
-  executionId: string;
-  status: "pending" | "running" | "succeeded" | "failed";
-  scoreBps?: number;
-  approved?: boolean;
-  error?: string;
-};
-
-/** Matches scoring.approvalThresholdBps in the CRE workflow's staging config. */
-const PASS_MARK_BPS = 7000;
-
 const ZERO_HASH = `0x${"0".repeat(64)}`;
+const MIN_SUMMARY = 40;
+const MAX_SCREENSHOTS = 6;
+
+type Evidence = { summary: string; liveUrl: string; demoVideoUrl: string; repoUrl: string; screenshots: string };
+const EMPTY_EVIDENCE: Evidence = { summary: "", liveUrl: "", demoVideoUrl: "", repoUrl: "", screenshots: "" };
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function lines(value: string): string[] {
+  return value
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Mirrors the server's checks so the grantee hears about a problem before a Selfie Check is spent. */
+function evidenceProblem(e: Evidence): string | null {
+  if (e.summary.trim().length < MIN_SUMMARY) {
+    return `Describe what you delivered in at least ${MIN_SUMMARY} characters.`;
+  }
+  const links = [e.liveUrl, e.demoVideoUrl, e.repoUrl].map((s) => s.trim()).filter(Boolean);
+  if (links.length === 0) return "Add at least one link someone can check: live product, demo video or repository.";
+  const shots = lines(e.screenshots);
+  if (shots.length > MAX_SCREENSHOTS) return `Up to ${MAX_SCREENSHOTS} screenshot links.`;
+  const badLink = [...links, ...shots].find((u) => !isHttpUrl(u));
+  if (badLink) return `Not a valid link: ${badLink}`;
+  return null;
+}
+
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
+}
+
+function countdown(seconds: number): string {
+  if (seconds <= 0) return "0:00";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}:${String(s).padStart(2, "0")}`;
+}
 
 export function MilestoneCard({
   grantId,
-  escrowAddress,
+  grantee,
+  terms,
   milestone,
   isGrantee,
 }: {
   grantId: string;
-  escrowAddress: `0x${string}`;
+  /** The asserter of every claim on this grant — UMA's dispute data names them. */
+  grantee: Address;
+  terms: EscrowTerms;
   milestone: MilestoneView;
   isGrantee: boolean;
 }) {
-  const { isConnected } = useAccount();
-  const { writeContractAsync, isPending } = useWriteContract();
+  const router = useRouter();
+  const { address, isConnected } = useAccount();
+  const send = useChainTx();
 
-  const [open, setOpen] = useState(milestone.status === 1);
+  const status = milestone.status;
+  const claimed = status === STATUS.Claimed;
+  const disputed = status === STATUS.Disputed;
+  const approved = status === STATUS.Approved;
+  const rejected = status === STATUS.Rejected;
+  const claimable = status === STATUS.Pending || rejected;
+
+  const bond = BigInt(terms.bond);
+  const liveness = Number(terms.liveness);
+  const expiresAt = Number(milestone.expiresAt);
+  const now = useNow(claimed);
+  const secondsLeft = expiresAt - now;
+  const windowClosed = claimed && secondsLeft <= 0;
+  const windowElapsed = liveness > 0 ? Math.min(1, Math.max(0, 1 - secondsLeft / liveness)) : 1;
+  const hasEvidence = milestone.evidenceHash !== ZERO_HASH;
+  const node = statusNodeColors(status);
+  const cacheKey = `milestone:${grantId}:${milestone.milestoneId}`;
+
+  const [expanded, setExpanded] = useState(claimed || disputed);
   const [techOpen, setTechOpen] = useState(false);
-  const [summary, setSummary] = useState("");
-  const [artifacts, setArtifacts] = useState("");
-  const [execution, setExecution] = useState<ExecutionView | null>(null);
+  const [ticket, setTicket] = useState<string | null>(null);
+  const [evidence, setEvidence] = useState<Evidence>(EMPTY_EVIDENCE);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  // Reset per milestone: a proof for one claim must not carry to the next.
-  const [humanVerified, setHumanVerified] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = milestone.status === 0 || milestone.status === 3;
-  const scoring = milestone.status === 1;
-  const settled = milestone.status === 2 || milestone.status === 4;
-  const rejected = milestone.status === 3;
-  const node = statusNodeColors(milestone.status);
+  const problem = evidenceProblem(evidence);
 
-  // Poll while a scoring run is in flight. The endpoint reconciles CRE's view
-  // with the milestone's on-chain state, so this stops once the report lands.
-  useEffect(() => {
-    if (!execution || execution.status === "succeeded" || execution.status === "failed") return;
-
-    const timer = setInterval(async () => {
+  /** Runs one user action: one busy flag, one error slot, and a refresh from the chain afterwards. */
+  const run = useCallback(
+    async (label: string, action: () => Promise<string>) => {
+      setBusy(label);
+      setError(null);
+      setNote(null);
       try {
-        const response = await fetch(
-          `/api/execution-status?executionId=${encodeURIComponent(execution.executionId)}`,
-          { cache: "no-store" },
-        );
-        if (!response.ok) return;
-        const body = await response.json();
-        setExecution(body.execution as ExecutionView);
-      } catch {
-        // transient — keep polling
+        setNote(await action());
+        router.refresh();
+      } catch (cause) {
+        setError(txErrorMessage(cause));
+      } finally {
+        setBusy(null);
+        setProgress(null);
       }
-    }, 4000);
+    },
+    [router],
+  );
 
-    return () => clearInterval(timer);
-  }, [execution]);
+  const ensureAllowance = useCallback(
+    async (spender: Address) => {
+      if (!address) throw new Error("Connect a wallet first.");
+      const current = await publicClient.readContract({
+        address: terms.usdcAddress,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [address, spender],
+      });
+      if (current < bond) {
+        await send({ address: terms.usdcAddress, abi: erc20Abi, functionName: "approve", args: [spender, bond] });
+      }
+    },
+    [address, terms.usdcAddress, bond, send],
+  );
 
-  const submit = useCallback(async () => {
-    setSubmitting(true);
-    setNote(null);
-    try {
-      // 1. Hash + store the bundle server-side and start the CRE run.
+  const claim = () =>
+    run("claim", async () => {
+      setProgress("1/3 · Publishing your evidence and getting the claim signed…");
       const response = await fetch("/api/milestones", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           grantId,
           milestoneId: milestone.milestoneId,
-          verificationTicket: humanVerified,
-          summary,
-          artifacts: artifacts
-            .split("\n")
-            .map((a) => a.trim())
-            .filter(Boolean),
+          verificationTicket: ticket,
+          summary: evidence.summary,
+          liveUrl: evidence.liveUrl,
+          demoVideoUrl: evidence.demoVideoUrl,
+          repoUrl: evidence.repoUrl,
+          screenshots: lines(evidence.screenshots),
         }),
       });
-      const body = await response.json();
-      if (!response.ok) {
-        setNote(body.detail ?? body.error ?? "Could not submit evidence.");
-        return;
-      }
+      const prepared = await response.json();
+      if (!response.ok) throw new Error(prepared.detail ?? prepared.error ?? "Could not prepare the claim.");
 
-      // 2. Mirror the hash on-chain. Only the grantee can do this, and it is
-      //    what moves the milestone into Submitted.
-      await writeContractAsync({
-        address: escrowAddress,
+      setProgress(`2/3 · Approving your ${formatUsdc(bond)} USDC bond…`);
+      await ensureAllowance(terms.escrowAddress);
+
+      setProgress("3/3 · Asserting the claim on UMA…");
+      await send({
+        address: terms.escrowAddress,
         abi: grantEscrowAbi,
-        functionName: "submitEvidence",
-        args: [BigInt(grantId), BigInt(milestone.milestoneId), body.evidenceHash],
+        functionName: "submitMilestone",
+        args: [
+          BigInt(grantId),
+          BigInt(milestone.milestoneId),
+          prepared.evidenceURI as string,
+          prepared.evidenceHash as Hex,
+          {
+            nullifierHash: prepared.attestation.nullifierHash as Hex,
+            deadline: BigInt(prepared.attestation.deadline),
+            signature: prepared.attestation.signature as Hex,
+          },
+        ],
       });
 
-      // The claim landed — that ticket is spent, so do not offer it again.
-      clearTicket(`milestone:${grantId}:${milestone.milestoneId}`);
-      setExecution(body.execution as ExecutionView);
-      setNote("Evidence submitted. Scoring in progress.");
-    } catch (cause) {
-      setNote(String(cause instanceof Error ? cause.message : cause));
-    } finally {
-      setSubmitting(false);
-    }
-  }, [grantId, milestone.milestoneId, humanVerified, summary, artifacts, escrowAddress, writeContractAsync]);
+      // The claim landed, so that Selfie Check is spent.
+      clearTicket(cacheKey);
+      setTicket(null);
+      setEvidence(EMPTY_EVIDENCE);
+      return `Claim submitted. It's open to dispute for ${formatDuration(liveness)}.`;
+    });
 
-  const scorePct = milestone.scoreBps / 100;
+  const dispute = () =>
+    run("dispute", async () => {
+      if (!address) throw new Error("Connect a wallet first.");
+      setProgress(`1/2 · Approving your ${formatUsdc(bond)} USDC dispute bond for UMA…`);
+      await ensureAllowance(UMA_OOV3_ADDRESS);
+      setProgress("2/2 · Disputing the claim on UMA…");
+      await send({
+        address: UMA_OOV3_ADDRESS,
+        abi: umaOptimisticOracleAbi,
+        functionName: "disputeAssertion",
+        args: [milestone.assertionId, address],
+      });
+      return "Disputed. UMA now decides; whoever is wrong loses their bond.";
+    });
+
+  const answerAsUma = (claimWasTrue: boolean) =>
+    run(claimWasTrue ? "answer-true" : "answer-false", async () => {
+      // The escrow sets expiresAt = assertion time + liveness in the same transaction,
+      // and UMA's price request is made for the assertion time.
+      const assertionTime = BigInt(expiresAt) - BigInt(terms.liveness);
+      await send({
+        address: UMA_SANDBOX_ORACLE_ADDRESS,
+        abi: umaSandboxOracleAbi,
+        functionName: "pushPrice",
+        args: [
+          ASSERT_TRUTH,
+          assertionTime,
+          disputeAncillaryData(milestone.assertionId, grantee),
+          claimWasTrue ? UMA_TRUE : UMA_FALSE,
+        ],
+      });
+      return `Answered: the claim was ${claimWasTrue ? "true" : "false"}. Settle to apply it.`;
+    });
+
+  const settle = () =>
+    run("settle", async () => {
+      await send({
+        address: terms.escrowAddress,
+        abi: grantEscrowAbi,
+        functionName: "settle",
+        args: [BigInt(grantId), BigInt(milestone.milestoneId)],
+      });
+      return "Settled.";
+    });
+
+  const subtitle = claimed
+    ? windowClosed
+      ? " · window closed, ready to settle"
+      : ` · open to dispute for ${countdown(secondsLeft)}`
+    : disputed
+      ? " · with UMA"
+      : "";
 
   return (
     <div className="relative">
@@ -143,35 +283,34 @@ export function MilestoneCard({
 
       <div className="card elev-sm overflow-hidden" style={{ padding: 0, gap: 0 }}>
         <button
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
           className="flex w-full items-center gap-3 px-5 py-[18px] text-left transition-colors hover:bg-[color-mix(in_srgb,var(--color-text)_4%,transparent)]"
         >
           <div className="min-w-0 flex-1">
             <p className="m-0 font-heading text-[17px] leading-tight">
               {milestone.title || `Milestone ${milestone.milestoneId + 1}`}
             </p>
-            <p className="m-0 mt-[3px] text-[12.5px]" style={{ opacity: 0.6 }}>
-              {formatUsdc(BigInt(milestone.amount))} USDC
-              {BigInt(milestone.paidAmount) > 0n && ` · ${formatUsdc(BigInt(milestone.paidAmount))} paid`}
+            <p className="m-0 mt-[3px] text-[12.5px]" style={{ opacity: 0.6 }} suppressHydrationWarning>
+              {formatUsdc(BigInt(milestone.amount))} USDC{subtitle}
             </p>
           </div>
-          <span className={`${statusTagClass(milestone.status)} flex-none`}>{statusName(milestone.status)}</span>
+          <span className={`${statusTagClass(status)} flex-none`}>{statusName(status)}</span>
           <span
             className="flex-none text-xs transition-transform duration-200"
-            style={{ opacity: 0.45, transform: open ? "rotate(180deg)" : "none" }}
+            style={{ opacity: 0.45, transform: expanded ? "rotate(180deg)" : "none" }}
             aria-hidden
           >
             ▾
           </span>
         </button>
 
-        {open && (
-          <div className="animate-rise px-5 pb-5 pt-0.5">
-            <div className="rule mb-4" />
+        {expanded && (
+          <div className="animate-rise flex flex-col gap-4 px-5 pb-5 pt-0.5">
+            <div className="rule" />
 
             {milestone.criteria && (
-              <div className="mb-4">
+              <div>
                 <p className="kicker m-0">What counts as done</p>
                 <p className="m-0 mt-1 whitespace-pre-wrap text-[13.5px]" style={{ opacity: 0.8 }}>
                   {milestone.criteria}
@@ -179,21 +318,154 @@ export function MilestoneCard({
               </div>
             )}
 
-            {/* — the human gate, before any evidence is accepted — */}
-            {isGrantee && canSubmit && !humanVerified && (
+            {hasEvidence && (
+              <a
+                href={`/evidence/${milestone.evidenceHash}`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-ghost self-start"
+                style={{ paddingLeft: 0 }}
+              >
+                {claimable ? "Previous claim's evidence ↗" : "Read the evidence ↗"}
+              </a>
+            )}
+
+            {/* — claimed: inside the dispute window — */}
+            {claimed && (
+              <div
+                className="flex flex-col gap-3 rounded-[22px] p-5"
+                style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}
+              >
+                <div className="flex flex-wrap items-baseline gap-2.5">
+                  <p className="m-0 font-heading text-base">
+                    {windowClosed ? "Nobody disputed it" : "Open to dispute"}
+                  </p>
+                  {!windowClosed && (
+                    <p className="mono m-0 ml-auto text-[20px] leading-none" suppressHydrationWarning>
+                      {countdown(secondsLeft)}
+                    </p>
+                  )}
+                </div>
+                <div className="track h-2">
+                  <div
+                    className="h-full rounded-full transition-[width] duration-1000"
+                    style={{ background: "var(--color-accent)", width: `${windowElapsed * 100}%` }}
+                    suppressHydrationWarning
+                  />
+                </div>
+                <p className="m-0 text-[12.5px]" style={{ opacity: 0.75 }}>
+                  {windowClosed
+                    ? "The window has closed. Anyone can settle it now to release the funds and return the bond."
+                    : `The grantee posted a ${formatUsdc(bond)} USDC bond. If nobody disputes before the timer runs out, the milestone pays out. Anyone can dispute by matching the bond; UMA then decides, and whoever is wrong loses theirs.`}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {!windowClosed && isConnected && !isGrantee && (
+                    <button className="btn-secondary font-body font-semibold" onClick={dispute} disabled={busy !== null}>
+                      {busy === "dispute" ? "Disputing…" : `Dispute · ${formatUsdc(bond)} USDC bond`}
+                    </button>
+                  )}
+                  {windowClosed && (
+                    <button className="btn-primary" onClick={settle} disabled={!isConnected || busy !== null}>
+                      {busy === "settle" ? "Settling…" : "Settle and release"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* — disputed: UMA decides — */}
+            {disputed && (
+              <div
+                className="flex flex-col gap-3 rounded-[22px] p-5"
+                style={{ background: "color-mix(in srgb, var(--color-accent-400) 14%, transparent)" }}
+              >
+                <p className="m-0 font-heading text-base">Disputed — UMA decides</p>
+                <p className="m-0 text-[12.5px]" style={{ opacity: 0.75 }}>
+                  Both sides have a {formatUsdc(bond)} USDC bond at stake. If the claim was true the grantee is paid and
+                  takes the disputer&apos;s bond; if false the milestone reopens and the disputer takes the grantee&apos;s.
+                  On mainnet this goes to UMA&apos;s token-holder vote.
+                </p>
+
+                <div
+                  className="flex flex-col gap-2.5 rounded-[18px] p-4"
+                  style={{ border: "1.5px dashed color-mix(in srgb, var(--color-text) 25%, transparent)" }}
+                >
+                  <p className="kicker m-0">Testnet only · stand-in for UMA&apos;s vote</p>
+                  <p className="m-0 text-[12.5px]" style={{ opacity: 0.75 }}>
+                    Base Sepolia answers disputes through UMA&apos;s sandbox oracle, which anyone can answer. Pick the
+                    outcome, then settle.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="btn-secondary font-body font-semibold"
+                      onClick={() => answerAsUma(true)}
+                      disabled={!isConnected || busy !== null}
+                    >
+                      {busy === "answer-true" ? "Answering…" : "Claim was true"}
+                    </button>
+                    <button
+                      className="btn-secondary font-body font-semibold"
+                      onClick={() => answerAsUma(false)}
+                      disabled={!isConnected || busy !== null}
+                    >
+                      {busy === "answer-false" ? "Answering…" : "Claim was false"}
+                    </button>
+                    <button className="btn-primary" onClick={settle} disabled={!isConnected || busy !== null}>
+                      {busy === "settle" ? "Settling…" : "Settle"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* — approved — */}
+            {approved && (
+              <div
+                className="rounded-[22px] px-5 py-[18px]"
+                style={{ background: "color-mix(in srgb, var(--color-accent-2) 14%, transparent)" }}
+              >
+                <p className="m-0 font-heading text-base">Approved</p>
+                <p className="m-0 mt-1 text-[13px]" style={{ opacity: 0.75 }}>
+                  {formatUsdc(BigInt(milestone.amount))} USDC credited to the payout wallet, and the bond went back to the
+                  grantee. The payout wallet withdraws it from the panel alongside.
+                </p>
+              </div>
+            )}
+
+            {/* — rejected — */}
+            {rejected && (
+              <div
+                className="rounded-[22px] px-5 py-[18px]"
+                style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
+              >
+                <p className="m-0 font-heading text-base">Claim rejected</p>
+                <p className="m-0 mt-1 text-[13px]" style={{ opacity: 0.75 }}>
+                  UMA found the last claim false, so its bond went to the disputer. The milestone is open to claim again
+                  with stronger evidence.
+                </p>
+              </div>
+            )}
+
+            {status === STATUS.Pending && !isGrantee && (
+              <p className="m-0 text-sm" style={{ opacity: 0.7 }}>
+                Not claimed yet. The grantee claims it with evidence and a bond when the work is done.
+              </p>
+            )}
+
+            {/* — the human gate, then the claim — */}
+            {isGrantee && claimable && !ticket && (
               <SelfieGate
                 purpose="milestone"
-                signal={`milestone:${grantId}:${milestone.milestoneId}`}
-                cacheKey={`milestone:${grantId}:${milestone.milestoneId}`}
+                signal={cacheKey}
+                cacheKey={cacheKey}
                 title="Confirm you're claiming this yourself"
-                body="A milestone claim releases real money. A Selfie Check proves a live human is making it — not a script that got hold of a session."
-                verifiedLabel="You can now submit your evidence."
-                onVerified={setHumanVerified}
+                body="A claim can release real money. A Selfie Check proves a live human is making it — not a script that got hold of a session."
+                verifiedLabel="You can now submit your claim."
+                onVerified={setTicket}
               />
             )}
 
-            {/* — evidence composer — */}
-            {isGrantee && canSubmit && humanVerified && (
+            {isGrantee && claimable && ticket && (
               <div
                 className="animate-rise flex flex-col gap-3 rounded-[22px] p-4"
                 style={{ background: "color-mix(in srgb, var(--color-text) 4%, transparent)" }}
@@ -203,137 +475,109 @@ export function MilestoneCard({
                   <textarea
                     id={`summary-${milestone.milestoneId}`}
                     className="input"
-                    value={summary}
-                    onChange={(e) => setSummary(e.target.value)}
-                    placeholder="Describe the work against the milestone criteria."
+                    value={evidence.summary}
+                    onChange={(e) => setEvidence((c) => ({ ...c, summary: e.target.value }))}
+                    placeholder="Describe the work against the milestone criteria — specific enough that someone could check it."
                   />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {(
+                    [
+                      ["liveUrl", "Live product", "https://…"],
+                      ["demoVideoUrl", "Demo video", "https://youtu.be/…"],
+                      ["repoUrl", "Repository", "https://github.com/…"],
+                    ] as const
+                  ).map(([key, label, placeholder]) => (
+                    <div key={key} className="field">
+                      <label htmlFor={`${key}-${milestone.milestoneId}`}>{label}</label>
+                      <input
+                        id={`${key}-${milestone.milestoneId}`}
+                        className="input mono text-[12.5px]"
+                        value={evidence[key]}
+                        onChange={(e) => setEvidence((c) => ({ ...c, [key]: e.target.value }))}
+                        placeholder={placeholder}
+                      />
+                    </div>
+                  ))}
                 </div>
                 <div className="field">
-                  <label htmlFor={`artifacts-${milestone.milestoneId}`}>Evidence links — one per line</label>
+                  <label htmlFor={`shots-${milestone.milestoneId}`}>Screenshot links — optional, one per line</label>
                   <textarea
-                    id={`artifacts-${milestone.milestoneId}`}
-                    className="input mono text-[13px]"
-                    style={{ minHeight: 60 }}
-                    value={artifacts}
-                    onChange={(e) => setArtifacts(e.target.value)}
-                    placeholder={"https://github.com/…/pull/128\nhttps://…/demo.mp4"}
+                    id={`shots-${milestone.milestoneId}`}
+                    className="input mono text-[12.5px]"
+                    style={{ minHeight: 56 }}
+                    value={evidence.screenshots}
+                    onChange={(e) => setEvidence((c) => ({ ...c, screenshots: e.target.value }))}
+                    placeholder="https://…/screenshot.png"
                   />
                 </div>
+
+                {problem && (evidence.summary.length > 0 || evidence.liveUrl || evidence.repoUrl || evidence.demoVideoUrl) && (
+                  <p className="m-0 text-xs" style={{ color: "var(--color-accent-700)" }}>
+                    {problem}
+                  </p>
+                )}
+
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     className="btn-primary"
-                    onClick={submit}
-                    disabled={!isConnected || submitting || isPending || summary.trim().length === 0}
+                    onClick={claim}
+                    disabled={!isConnected || busy !== null || problem !== null}
                   >
-                    {submitting || isPending ? "Submitting…" : "Submit for confidential scoring"}
+                    {busy === "claim" ? "Claiming…" : `Claim with a ${formatUsdc(bond)} USDC bond`}
                   </button>
-                  <p className="m-0 flex-1 basis-[200px] text-xs" style={{ opacity: 0.6 }}>
-                    Only a hash goes on-chain. The bundle itself is read by the scoring enclave.
+                  <p className="m-0 flex-1 basis-[220px] text-xs" style={{ opacity: 0.6 }}>
+                    Your evidence is published and its hash goes on-chain. The claim is open to dispute for{" "}
+                    {formatDuration(liveness)}; you get the bond back unless UMA finds it false.
                   </p>
                 </div>
               </div>
             )}
 
-            {/* — in flight — */}
-            {scoring && (
+            {progress && (
               <div
-                className="flex flex-wrap items-center gap-4 rounded-[22px] p-5"
-                style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}
-              >
-                <div className="flex flex-none gap-1.5" aria-hidden>
-                  {[0, 0.18, 0.36].map((delay) => (
-                    <span
-                      key={delay}
-                      className="animate-pulse-dot h-2.5 w-2.5 rounded-full"
-                      style={{ background: "var(--color-accent)", animationDelay: `${delay}s` }}
-                    />
-                  ))}
-                </div>
-                <div className="min-w-0 flex-1 basis-[220px]">
-                  <p className="m-0 font-heading text-base">Scoring inside the enclave</p>
-                  <p className="m-0 mt-[3px] text-[12.5px]" style={{ opacity: 0.7 }}>
-                    Sealed inside the scoring enclave — nobody at the fund can read this submission.
-                  </p>
-                </div>
-                <div className="track relative h-1.5 flex-1 basis-full">
-                  <div
-                    className="animate-sweep absolute inset-0 rounded-full"
-                    style={{ width: "34%", background: "var(--color-accent)" }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* — settled — */}
-            {settled && (
-              <div
-                className="rounded-[22px] px-5 py-[18px]"
-                style={{ background: "color-mix(in srgb, var(--color-accent-2) 14%, transparent)" }}
-              >
-                <div className="flex flex-wrap items-baseline gap-2.5">
-                  <p className="kicker m-0">Confidential score</p>
-                  <p className="m-0 ml-auto font-heading text-2xl leading-none">{scorePct.toFixed(1)}%</p>
-                </div>
-                <div className="track relative my-3 h-2.5">
-                  <div
-                    className="h-full rounded-full transition-[width] duration-700"
-                    style={{ background: "var(--color-accent-2)", width: `${Math.min(scorePct, 100)}%` }}
-                  />
-                  <span
-                    className="absolute top-[-3px] h-4 w-0.5"
-                    style={{
-                      left: `${PASS_MARK_BPS / 100}%`,
-                      background: "color-mix(in srgb, var(--color-text) 45%, transparent)",
-                    }}
-                    aria-hidden
-                  />
-                </div>
-                <p className="m-0 text-[12.5px]" style={{ opacity: 0.7 }}>
-                  Pass mark {PASS_MARK_BPS / 100}% · {formatUsdc(BigInt(milestone.paidAmount))} USDC released to the
-                  payout wallet.
-                </p>
-              </div>
-            )}
-
-            {/* — changes requested — */}
-            {rejected && (
-              <div
-                className="rounded-[22px] px-5 py-[18px]"
+                className="flex items-center gap-3 rounded-[20px] px-4 py-3.5"
                 style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
               >
-                <p className="m-0 mb-1.5 font-heading text-base">Changes requested</p>
-                <p className="m-0 mb-3 text-[13.5px]" style={{ opacity: 0.8 }}>
-                  Scored {scorePct.toFixed(1)}% — below the {PASS_MARK_BPS / 100}% pass mark. The enclave returned a
-                  verdict without revealing the submission.
-                </p>
-                {isGrantee && (
-                  <p className="m-0 text-[13px]" style={{ opacity: 0.7 }}>
-                    Edit the evidence above and resubmit.
-                  </p>
-                )}
+                <span
+                  className="animate-spin-ring h-4 w-4 flex-none rounded-full"
+                  style={{
+                    border: "2.5px solid color-mix(in srgb, var(--color-accent) 35%, transparent)",
+                    borderTopColor: "var(--color-accent)",
+                  }}
+                  aria-hidden
+                />
+                <p className="m-0 text-[13.5px]">{progress}</p>
               </div>
             )}
-
-            {milestone.status === 0 && !isGrantee && (
-              <p className="m-0 text-sm" style={{ opacity: 0.7 }}>
-                Not started. The grantee submits evidence to begin confidential scoring.
+            {error && (
+              <p className="m-0 break-words text-xs" style={{ color: "var(--color-accent-700)" }}>
+                {error}
+              </p>
+            )}
+            {note && (
+              <p className="m-0 text-xs" style={{ opacity: 0.75 }}>
+                {note}
               </p>
             )}
 
             {/* — technical detail — */}
-            <button onClick={() => setTechOpen((v) => !v)} className="btn-ghost mt-3.5" style={{ paddingLeft: 0 }}>
+            <button onClick={() => setTechOpen((v) => !v)} className="btn-ghost self-start" style={{ paddingLeft: 0 }}>
               {techOpen ? "Hide technical detail" : "Technical detail"}
             </button>
             {techOpen && (
               <dl
-                className="animate-rise m-0 mt-2.5 grid gap-3"
-                style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+                className="animate-rise m-0 grid gap-3"
+                style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}
               >
                 {[
-                  { label: "Evidence hash", value: milestone.evidenceHash === ZERO_HASH ? "—" : milestone.evidenceHash },
+                  { label: "UMA assertion", value: milestone.assertionId === ZERO_HASH ? "—" : milestone.assertionId },
+                  { label: "Evidence hash", value: hasEvidence ? milestone.evidenceHash : "—" },
+                  {
+                    label: "Dispute window ends",
+                    value: expiresAt > 0 ? new Date(expiresAt * 1000).toLocaleString() : "—",
+                  },
                   { label: "Amount", value: `${milestone.amount} base units` },
-                  { label: "Paid", value: `${milestone.paidAmount} base units` },
-                  { label: "Score", value: `${milestone.scoreBps} bps` },
                 ].map((t) => (
                   <div key={t.label} className="min-w-0">
                     <dt className="kicker">{t.label}</dt>
@@ -341,18 +585,6 @@ export function MilestoneCard({
                   </div>
                 ))}
               </dl>
-            )}
-
-            {execution && (
-              <p className="m-0 mt-3 text-xs" style={{ opacity: 0.6 }}>
-                Run <span className="mono">{execution.executionId.slice(0, 24)}</span> — {execution.status}
-                {execution.error && <span className="mt-1 block text-[var(--color-accent-700)]">{execution.error}</span>}
-              </p>
-            )}
-            {note && (
-              <p className="m-0 mt-3 text-xs" style={{ opacity: 0.7 }}>
-                {note}
-              </p>
             )}
           </div>
         )}

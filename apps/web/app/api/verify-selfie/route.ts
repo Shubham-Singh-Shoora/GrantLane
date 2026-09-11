@@ -23,10 +23,11 @@ type Body = {
  * would be trivially bypassed, and for the payout purpose this endpoint is what
  * stands between a stolen session and a redirected grant payout.
  *
- * For the `application` and `milestone` purposes there is no on-chain component,
- * so the caller gets back the nullifier and nothing else. That nullifier is the
- * anti-bot handle: it is stable per human per action, so the application store
- * can refuse a second submission from the same person.
+ * For the `application` and `milestone` purposes the caller gets back a signed
+ * ticket carrying the nullifier. An application ticket is spent by
+ * /api/applications, which refuses a second submission from the same person; a
+ * milestone ticket is spent by /api/milestones, which exchanges it for the
+ * on-chain claim attestation.
  */
 export async function POST(request: Request) {
   let body: Body;

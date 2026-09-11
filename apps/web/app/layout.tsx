@@ -27,7 +27,7 @@ const figtree = Figtree({
 export const metadata: Metadata = {
   title: "GrantLane",
   description:
-    "Milestone grant escrow — confidential scoring on Chainlink CRE, settlement on Arc, identity by World ID.",
+    "Milestone grant escrow — bonded claims settled by UMA's optimistic oracle on Base, identity by World ID.",
 };
 
 /**
@@ -90,7 +90,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main className="mx-auto max-w-shell px-5 pb-[72px] pt-2">{children}</main>
 
             <footer className="mx-auto max-w-shell px-5 pb-10 text-xs" style={{ opacity: 0.55 }}>
-              Settlement on Arc Testnet (chain 5042002) · scoring by Chainlink CRE · identity by World ID Selfie Check
+              Escrow on Base Sepolia (chain 84532) · claims settled by UMA · settlement workflow on Chainlink CRE · identity by World ID Selfie Check
             </footer>
           </div>
           {/* Cookieless page analytics. Dynamic routes are reported by their

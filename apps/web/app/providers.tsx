@@ -4,13 +4,13 @@ import { useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, createConfig, http } from "wagmi";
 import { injected } from "@wagmi/core";
-import { arcTestnet, ARC_RPC_URL } from "@/lib/chain";
+import { appChain, RPC_URL } from "@/lib/chain";
 import { RoleProvider } from "@/components/RoleProvider";
 
 const wagmiConfig = createConfig({
-  chains: [arcTestnet],
+  chains: [appChain],
   connectors: [injected()],
-  transports: { [arcTestnet.id]: http(ARC_RPC_URL) },
+  transports: { [appChain.id]: http(RPC_URL) },
   ssr: true,
 });
 

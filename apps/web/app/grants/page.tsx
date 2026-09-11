@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { formatUsdc, readGrant, readGrantCount, readMilestones } from "@/lib/contracts";
+import { formatUsdc, readGrant, readGrantCount, readMilestones, STATUS } from "@/lib/contracts";
 import { addressInitials, shortAddress, statusDotFill, statusName } from "@/lib/status";
 import { SetupNotice } from "@/components/SetupNotice";
 
@@ -28,7 +28,7 @@ async function loadGrants(): Promise<Row[]> {
         total: grant.totalAmount,
         released: grant.releasedAmount,
         active: grant.active,
-        paidCount: milestones.filter((m) => Number(m.status) === 4).length,
+        paidCount: milestones.filter((m) => Number(m.status) === STATUS.Approved).length,
         milestoneStatuses: milestones.map((m) => Number(m.status)),
       };
     }),
@@ -87,7 +87,7 @@ function GrantCard({ row }: { row: Row }) {
           />
         ))}
         <span className="ml-1.5 whitespace-nowrap text-[11px]" style={{ opacity: 0.55 }}>
-          {row.paidCount}/{row.milestoneStatuses.length} paid
+          {row.paidCount}/{row.milestoneStatuses.length} approved
         </span>
       </div>
     </Link>
@@ -108,8 +108,8 @@ export default async function HomePage() {
         <div className="min-w-0 flex-1 basis-[300px]">
           <h1 className="mb-2 text-[40px]">Grants</h1>
           <p className="max-w-[56ch] text-[15px]" style={{ opacity: 0.7 }}>
-            Every grant is escrowed up front and released milestone by milestone. Evidence is scored confidentially —
-            no reviewer ever reads the raw submission.
+            Every grant is escrowed up front and released milestone by milestone. A milestone pays out when its bonded
+            claim survives a dispute window — nobody approves it by hand.
           </p>
         </div>
       </div>
@@ -131,8 +131,7 @@ export default async function HomePage() {
           </span>
           <h4 className="m-0">No grants yet</h4>
           <p className="m-0 max-w-[44ch] text-sm" style={{ opacity: 0.7 }}>
-            Fund one by calling <code className="mono">createGrant</code> on GrantEscrow, or run
-            <code className="mono"> scripts/seed-grant.sh</code>.
+            Grants appear here once an approved application is funded.
           </p>
         </div>
       ) : (

@@ -1,22 +1,35 @@
 import { defineChain } from "viem";
 
-export const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? 5042002);
-export const ARC_RPC_URL = process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.io";
+export const CHAIN_ID = 84532;
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "https://sepolia.base.org";
+export const EXPLORER_URL = "https://sepolia.basescan.org";
 
 /**
- * Arc Testnet.
+ * GrantLane runs on Base Sepolia. UMA's Optimistic Oracle V3 is deployed there with
+ * a sandbox oracle for answering disputes, and Circle USDC is whitelisted as a UMA
+ * bond — so grant escrow, claim bonds and dispute bonds are all the same USDC.
  *
- * USDC is the native gas token, but at **18 decimals** — not the 6 decimals the
- * USDC ERC-20 uses. Both live in this app: gas/native balances are 18-decimal,
- * while escrowed amounts (`formatUsdc` in lib/contracts) are 6-decimal ERC-20
- * units. Mixing them up is a 10^12 error, so keep the two paths separate.
+ * Defined here rather than imported from `viem/chains`: that entry point is a
+ * barrel of every chain viem knows, and pulling it in bundles far more than one
+ * chain definition.
  */
-export const arcTestnet = defineChain({
-  id: ARC_CHAIN_ID,
-  name: "Arc Testnet",
-  nativeCurrency: { name: "USD Coin", symbol: "USDC", decimals: 18 },
+export const appChain = defineChain({
+  id: CHAIN_ID,
+  name: "Base Sepolia",
+  nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: {
-    default: { http: [ARC_RPC_URL] },
+    default: { http: [RPC_URL] },
+  },
+  blockExplorers: {
+    default: { name: "Basescan", url: EXPLORER_URL },
   },
   testnet: true,
 });
+
+export function explorerTx(hash: string): string {
+  return `${EXPLORER_URL}/tx/${hash}`;
+}
+
+export function explorerAddress(address: string): string {
+  return `${EXPLORER_URL}/address/${address}`;
+}

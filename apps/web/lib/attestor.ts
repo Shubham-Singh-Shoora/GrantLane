@@ -2,28 +2,20 @@ import "server-only";
 
 import { privateKeyToAccount } from "viem/accounts";
 import type { Address, Hex } from "viem";
-import { ARC_CHAIN_ID } from "./chain";
+import { CHAIN_ID } from "./chain";
 import { grantEscrowAbi, grantEscrowAddress, publicClient } from "./contracts";
+import { grantLaneDomain, MILESTONE_CLAIM_TYPES, PAYOUT_WALLET_TYPES } from "./eip712";
 
 /**
  * The attestor key is the bridge between "World says this human is real" and
- * "GrantEscrow will move the payout wallet". The server verifies a Selfie Check
- * proof, then signs this struct; the grantee submits the signature on-chain.
+ * "GrantEscrow will act". The server verifies a Selfie Check proof, then signs an
+ * EIP-712 struct; the grantee submits the signature on-chain themselves.
  *
  * Deliberately EIP-712 rather than a bare on-chain allowlist write: it keeps the
  * server out of the transaction path (the grantee pays gas) while still making
- * the payout change unforgeable without the server's key.
+ * the gated action unforgeable without the server's key. Two actions are gated
+ * this way: claiming a milestone, and changing the payout wallet.
  */
-
-const PAYOUT_WALLET_TYPES = {
-  PayoutWalletChange: [
-    { name: "grantId", type: "uint256" },
-    { name: "newWallet", type: "address" },
-    { name: "nullifierHash", type: "bytes32" },
-    { name: "nonce", type: "uint256" },
-    { name: "deadline", type: "uint256" },
-  ],
-} as const;
 
 /** Must match the deadline window the UI advertises to the user. */
 export const ATTESTATION_TTL_SECONDS = 15 * 60;
@@ -34,6 +26,10 @@ function attestorAccount() {
     throw new Error("ATTESTOR_PRIVATE_KEY must be a 32-byte hex private key. See .env.example.");
   }
   return privateKeyToAccount(key as Hex);
+}
+
+function deadlineFromNow(): bigint {
+  return BigInt(Math.floor(Date.now() / 1000) + ATTESTATION_TTL_SECONDS);
 }
 
 export type PayoutAttestation = {
@@ -67,15 +63,10 @@ export async function signPayoutWalletChange(params: {
     args: [params.grantId],
   })) as bigint;
 
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + ATTESTATION_TTL_SECONDS);
+  const deadline = deadlineFromNow();
 
   const signature = await account.signTypedData({
-    domain: {
-      name: "GrantLane",
-      version: "1",
-      chainId: ARC_CHAIN_ID,
-      verifyingContract,
-    },
+    domain: grantLaneDomain(CHAIN_ID, verifyingContract),
     types: PAYOUT_WALLET_TYPES,
     primaryType: "PayoutWalletChange",
     message: {
@@ -90,6 +81,71 @@ export async function signPayoutWalletChange(params: {
   return {
     grantId: params.grantId.toString(),
     newWallet: params.newWallet,
+    nullifierHash: params.nullifierHash,
+    nonce: nonce.toString(),
+    deadline: deadline.toString(),
+    signature,
+    attestor: account.address,
+  };
+}
+
+export type ClaimAttestation = {
+  grantId: string;
+  milestoneId: number;
+  evidenceHash: Hex;
+  nullifierHash: Hex;
+  nonce: string;
+  deadline: string;
+  signature: Hex;
+  attestor: Address;
+};
+
+/**
+ * Signs a milestone claim, bound to the exact evidence hash and the grant's current
+ * claim nonce.
+ *
+ * World ID nullifiers are stable per person per action, so the contract can't make
+ * them single-use without blocking a grantee's second milestone; the nonce is what
+ * prevents replay. It also means that if another claim on the same grant lands
+ * between signing and submitting, this attestation goes stale and the grantee
+ * simply prepares the claim again.
+ */
+export async function signMilestoneClaim(params: {
+  grantId: bigint;
+  milestoneId: number;
+  evidenceHash: Hex;
+  nullifierHash: Hex;
+}): Promise<ClaimAttestation> {
+  const account = attestorAccount();
+  const verifyingContract = grantEscrowAddress();
+
+  const nonce = (await publicClient.readContract({
+    address: verifyingContract,
+    abi: grantEscrowAbi,
+    functionName: "claimNonce",
+    args: [params.grantId],
+  })) as bigint;
+
+  const deadline = deadlineFromNow();
+
+  const signature = await account.signTypedData({
+    domain: grantLaneDomain(CHAIN_ID, verifyingContract),
+    types: MILESTONE_CLAIM_TYPES,
+    primaryType: "MilestoneClaim",
+    message: {
+      grantId: params.grantId,
+      milestoneId: BigInt(params.milestoneId),
+      evidenceHash: params.evidenceHash,
+      nullifierHash: params.nullifierHash,
+      nonce,
+      deadline,
+    },
+  });
+
+  return {
+    grantId: params.grantId.toString(),
+    milestoneId: params.milestoneId,
+    evidenceHash: params.evidenceHash,
     nullifierHash: params.nullifierHash,
     nonce: nonce.toString(),
     deadline: deadline.toString(),

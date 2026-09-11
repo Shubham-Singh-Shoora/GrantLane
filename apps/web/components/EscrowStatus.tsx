@@ -1,21 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { formatUsdc } from "@/lib/contracts";
-import { shortAddress } from "@/lib/status";
+import { formatUsdc, type EscrowTerms } from "@/lib/contracts";
+import { formatDuration, shortAddress } from "@/lib/status";
 
 export type GrantView = {
   grantId: string;
   funder: string;
   grantee: string;
   payoutWallet: string;
-  token: string;
   totalAmount: string;
   releasedAmount: string;
+  /** Milestones claimed or disputed right now; the grant can't close while any are. */
+  openClaims: number;
   active: boolean;
+  termsHash: string;
 };
 
-export function EscrowStatus({ grant }: { grant: GrantView }) {
+export function EscrowStatus({ grant, terms }: { grant: GrantView; terms: EscrowTerms }) {
   const [techOpen, setTechOpen] = useState(false);
 
   const total = BigInt(grant.totalAmount);
@@ -50,8 +52,16 @@ export function EscrowStatus({ grant }: { grant: GrantView }) {
           <p className="m-0 mt-0.5 font-semibold">{formatUsdc(remaining)} USDC</p>
         </div>
         <div className="min-w-0">
-          <p className="kicker m-0">Milestones</p>
-          <p className="m-0 mt-0.5 font-semibold">{grant.active ? "In progress" : "Closed"}</p>
+          <p className="kicker m-0">Open claims</p>
+          <p className="m-0 mt-0.5 font-semibold">{grant.openClaims}</p>
+        </div>
+        <div className="min-w-0">
+          <p className="kicker m-0">Bond</p>
+          <p className="m-0 mt-0.5 font-semibold">{formatUsdc(BigInt(terms.bond))} USDC</p>
+        </div>
+        <div className="min-w-0">
+          <p className="kicker m-0">Dispute window</p>
+          <p className="m-0 mt-0.5 font-semibold">{formatDuration(Number(terms.liveness))}</p>
         </div>
       </div>
 
@@ -64,13 +74,14 @@ export function EscrowStatus({ grant }: { grant: GrantView }) {
           {[
             { label: "Grantee", value: grant.grantee },
             { label: "Funder", value: grant.funder },
-            { label: "Escrow token", value: grant.token },
+            { label: "Terms hash", value: grant.termsHash },
+            { label: "Escrow", value: terms.escrowAddress },
             { label: "Total (base units)", value: grant.totalAmount },
           ].map((t) => (
             <div key={t.label} className="min-w-0">
               <dt className="kicker">{t.label}</dt>
               <dd className="mono m-0 mt-0.5 break-all text-xs" title={t.value}>
-                {t.value.startsWith("0x") ? shortAddress(t.value, 12, 8) : t.value}
+                {t.value.startsWith("0x") && t.value.length === 42 ? shortAddress(t.value, 12, 8) : t.value}
               </dd>
             </div>
           ))}

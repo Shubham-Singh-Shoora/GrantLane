@@ -2,10 +2,12 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { erc20Abi, formatUnits, parseUnits, type Address } from "viem";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { erc20Abi, formatUnits, parseEventLogs, parseUnits, type Address } from "viem";
+import { useAccount } from "wagmi";
 import type { Application, ProposedMilestone } from "@/lib/applications";
+import { hashTerms } from "@/lib/commitments";
 import { grantEscrowAbi } from "@/lib/contracts";
+import { txErrorMessage, useChainTx } from "@/lib/useChainTx";
 import { useRole } from "./RoleProvider";
 
 type Draft = { title: string; criteria: string; amount: string };
@@ -30,14 +32,14 @@ function toBaseUnits(amount: string): bigint | null {
 /**
  * The granter's side of the desk: adjust the milestone set, then escrow it.
  *
- * Milestone *amounts* are the only part the contract knows about — titles and
- * criteria stay off-chain, keyed to the grant id once funding lands. That split
- * is deliberate: putting prose on-chain costs gas and buys nothing, while the
- * amounts are exactly what the escrow has to enforce.
+ * Milestone *amounts* are what the contract enforces. Titles and criteria stay
+ * off-chain, keyed to the grant id once funding lands, and only their hash goes
+ * on-chain — enough for a disputed claim to be judged against terms nobody can
+ * quietly edit, without paying gas to store prose.
  *
  * Funding is two transactions because ERC-20 requires it: approve the escrow for
- * the total, then createGrant. The grant id is read from `nextGrantId()` before
- * the second call, which is what the contract will assign.
+ * the total, then createGrant. The new grant id is read from createGrant's
+ * GrantCreated event rather than guessed beforehand.
  */
 export function ReviewPanel({
   application,
@@ -51,8 +53,7 @@ export function ReviewPanel({
   const router = useRouter();
   const { address, isConnected } = useAccount();
   const { isGranter } = useRole();
-  const publicClient = usePublicClient();
-  const { writeContractAsync } = useWriteContract();
+  const send = useChainTx();
 
   const [drafts, setDrafts] = useState<Draft[]>(() =>
     toDraft(application.approvedMilestones ?? application.proposedMilestones),
@@ -125,50 +126,40 @@ export function ReviewPanel({
   }, [patch, reviewNote, router]);
 
   const fund = useCallback(async () => {
-    if (!publicClient) return;
     setBusy("fund");
     setError(null);
     setProgress(null);
     try {
-      const amounts = payload().map((m) => BigInt(m.amount));
+      const funded = payload();
+      const amounts = funded.map((m) => BigInt(m.amount));
       const sum = amounts.reduce((a, b) => a + b, 0n);
+      const termsHash = hashTerms(funded);
 
       setProgress("1/3 · Approving the escrow to move your USDC…");
-      const approveHash = await writeContractAsync({
-        address: usdcAddress,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [escrowAddress, sum],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      await send({ address: usdcAddress, abi: erc20Abi, functionName: "approve", args: [escrowAddress, sum] });
 
-      // Whatever nextGrantId reads now is the id createGrant will assign.
-      const grantId = (await publicClient.readContract({
-        address: escrowAddress,
-        abi: grantEscrowAbi,
-        functionName: "nextGrantId",
-      })) as bigint;
-
-      setProgress("2/3 · Escrowing the milestones on Arc…");
-      const createHash = await writeContractAsync({
+      setProgress("2/3 · Escrowing the milestones on Base…");
+      const { hash: createHash, receipt } = await send({
         address: escrowAddress,
         abi: grantEscrowAbi,
         functionName: "createGrant",
-        args: [application.wallet as Address, usdcAddress, amounts],
+        args: [application.wallet as Address, amounts, termsHash],
       });
-      await publicClient.waitForTransactionReceipt({ hash: createHash });
+      const [created] = parseEventLogs({ abi: grantEscrowAbi, logs: receipt.logs, eventName: "GrantCreated" });
+      if (!created) throw new Error(`createGrant landed (${createHash}) but emitted no GrantCreated event.`);
+      const grantId = created.args.grantId.toString();
 
-      setProgress("3/3 · Linking the application to grant #" + grantId.toString() + "…");
-      await patch({ action: "mark-funded", grantId: grantId.toString(), fundingTxHash: createHash });
+      setProgress(`3/3 · Linking the application to grant #${grantId}…`);
+      await patch({ action: "mark-funded", grantId, fundingTxHash: createHash, fundedMilestones: funded, termsHash });
 
-      router.push(`/grant/${grantId.toString()}`);
+      router.push(`/grant/${grantId}`);
     } catch (cause) {
-      setError(String(cause instanceof Error ? cause.message : cause));
+      setError(txErrorMessage(cause));
       setProgress(null);
     } finally {
       setBusy(null);
     }
-  }, [publicClient, payload, writeContractAsync, usdcAddress, escrowAddress, application.wallet, patch, router]);
+  }, [payload, send, usdcAddress, escrowAddress, application.wallet, patch, router]);
 
   const decided = application.status === "approved" || application.status === "funded";
   const funded = application.status === "funded";
@@ -179,7 +170,7 @@ export function ReviewPanel({
     const STAGES = [
       { key: "submitted", label: "Submitted", body: "Your application is in the review queue." },
       { key: "approved", label: "Scope agreed", body: "The granter has settled which milestones they'll fund." },
-      { key: "funded", label: "Escrowed on Arc", body: "The money is locked. You can start claiming milestones." },
+      { key: "funded", label: "Escrowed on Base", body: "The money is locked. You can start claiming milestones." },
     ] as const;
     const reachedIndex = STAGES.findIndex((s) => s.key === application.status);
 
@@ -243,8 +234,8 @@ export function ReviewPanel({
       </div>
 
       <p className="m-0 text-[13px]" style={{ opacity: 0.7 }}>
-        Adjust what you&apos;re willing to fund. Amounts go on-chain and the escrow enforces them; titles and criteria
-        stay off-chain and become what the enclave scores evidence against.
+        Adjust what you&apos;re willing to fund. Amounts go on-chain and the escrow enforces them. Titles and criteria
+        stay off-chain, but their hash is committed with the grant — they&apos;re what a disputed claim is judged against.
       </p>
 
       {funded ? (
@@ -252,7 +243,7 @@ export function ReviewPanel({
           className="rounded-[20px] px-4 py-3 text-[13.5px]"
           style={{ background: "color-mix(in srgb, var(--color-accent-2) 16%, transparent)" }}
         >
-          <strong>Funded.</strong> Escrowed as grant #{application.grantId} on Arc.
+          <strong>Funded.</strong> Escrowed as grant #{application.grantId} on Base Sepolia.
         </div>
       ) : (
         drafts.map((draft, index) => (

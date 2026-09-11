@@ -19,7 +19,7 @@ import { useEffect, useState } from "react";
 const LABELS: Record<string, string> = {
   submitted: "is back in review",
   approved: "has an agreed scope — the granter settled the milestones",
-  funded: "is funded and escrowed on Arc",
+  funded: "is funded and escrowed on Base",
   declined: "was declined",
 };
 

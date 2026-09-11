@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { isAddress } from "viem";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount } from "wagmi";
 import { grantEscrowAbi } from "@/lib/contracts";
 import { shortAddress } from "@/lib/status";
+import { txErrorMessage, useChainTx } from "@/lib/useChainTx";
 import { SelfieCheckButton, type Attestation } from "./SelfieCheckButton";
 
 /**
- * Changing where a grant pays out is the one action worth gating on proof of a
- * live human: it is the step an attacker would take after stealing a session.
- * The flow is Selfie Check -> server verifies the proof and signs an EIP-712
- * attestation -> the grantee submits that attestation on-chain themselves.
+ * Changing where a grant pays out is worth gating on proof of a live human: it is
+ * the step an attacker would take after stealing a session. The flow is Selfie
+ * Check -> server verifies the proof and signs an EIP-712 attestation -> the
+ * grantee submits that attestation on-chain themselves.
  */
 export function PayoutWalletPanel({
   grantId,
@@ -24,12 +26,14 @@ export function PayoutWalletPanel({
   currentPayoutWallet: string;
   isGrantee: boolean;
 }) {
+  const router = useRouter();
   const { isConnected } = useAccount();
-  const { writeContractAsync, isPending } = useWriteContract();
+  const send = useChainTx();
 
   const [editing, setEditing] = useState(false);
   const [newWallet, setNewWallet] = useState("");
   const [attestation, setAttestation] = useState<Attestation | null>(null);
+  const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
@@ -52,26 +56,32 @@ export function PayoutWalletPanel({
 
   async function applyChange() {
     if (!attestation) return;
+    setBusy(true);
     setNote(null);
     try {
-      const hash = await writeContractAsync({
+      const { hash } = await send({
         address: escrowAddress,
         abi: grantEscrowAbi,
         functionName: "changePayoutWallet",
         args: [
           BigInt(attestation.grantId),
           attestation.newWallet,
-          attestation.nullifierHash,
-          BigInt(attestation.deadline),
-          attestation.signature,
+          {
+            nullifierHash: attestation.nullifierHash,
+            deadline: BigInt(attestation.deadline),
+            signature: attestation.signature,
+          },
         ],
       });
-      setNote(`Submitted: ${hash}`);
+      setNote(`Payout wallet changed: ${hash}`);
       setAttestation(null);
       setEditing(false);
       setNewWallet("");
+      router.refresh();
     } catch (cause) {
-      setNote(String(cause instanceof Error ? cause.message : cause));
+      setNote(txErrorMessage(cause));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -89,7 +99,7 @@ export function PayoutWalletPanel({
         {shortAddress(currentPayoutWallet, 14, 8)}
       </p>
       <p className="m-0 text-[12.5px]" style={{ opacity: 0.6 }}>
-        {currentPayoutWallet.toLowerCase() === "" ? "" : "Where approved milestones release USDC."}
+        Where approved milestones are credited.
       </p>
 
       <div className="rule my-0.5" />
@@ -159,9 +169,9 @@ export function PayoutWalletPanel({
             <button
               className="btn-primary"
               onClick={applyChange}
-              disabled={!isConnected || isPending || remaining === "expired"}
+              disabled={!isConnected || busy || remaining === "expired"}
             >
-              {isPending ? "Confirming…" : "Apply change on-chain"}
+              {busy ? "Confirming…" : "Apply change on-chain"}
             </button>
             <button className="btn-secondary font-body font-semibold" onClick={cancel}>
               Cancel

@@ -152,7 +152,7 @@ export function ApplicationForm() {
             style={{ minHeight: 110 }}
             value={pitch}
             onChange={(e) => setPitch(e.target.value)}
-            placeholder="A couple of paragraphs. The reviewer reads this; the scoring enclave reads your milestone evidence later."
+            placeholder="A couple of paragraphs. The reviewer reads this before deciding what to fund."
           />
           <p className="m-0 mt-1 text-[11px]" style={{ opacity: 0.55 }}>
             {pitch.trim().length} characters{pitch.trim().length < 40 && " — at least 40"}
@@ -280,7 +280,7 @@ export function ApplicationForm() {
                 style={{ minHeight: 64 }}
                 value={milestone.criteria}
                 onChange={(e) => updateMilestone(index, { criteria: e.target.value })}
-                placeholder="One criterion per line — these become what the enclave scores your evidence against."
+                placeholder="One criterion per line — specific enough that anyone could check a claim against it."
               />
             </div>
           </div>

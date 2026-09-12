@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isAddress, parseUnits } from "viem";
 import { useAccount } from "wagmi";
@@ -8,10 +8,38 @@ import type { RepoSnapshot } from "@/lib/applications";
 import { GithubRepoCard } from "./GithubRepoCard";
 import { SelfieGate } from "./SelfieGate";
 import { clearTicket } from "@/lib/ticket-cache";
+import { clearDraft, loadDraft, saveDraft } from "@/lib/form-draft";
 
 type DraftMilestone = { title: string; criteria: string; amount: string };
 
 const EMPTY_MILESTONE: DraftMilestone = { title: "", criteria: "", amount: "" };
+
+type Draft = {
+  projectName: string;
+  organisation: string;
+  pitch: string;
+  website: string;
+  repoUrl: string;
+  wallet: string;
+  milestones: DraftMilestone[];
+  savedAt: string;
+};
+
+const DRAFT_KEY = "application:v1";
+/** Wait this long after the last keystroke before writing the draft. */
+const SAVE_DEBOUNCE_MS = 600;
+
+function isBlank(draft: Omit<Draft, "savedAt">): boolean {
+  return (
+    !draft.projectName.trim() &&
+    !draft.organisation.trim() &&
+    !draft.pitch.trim() &&
+    !draft.website.trim() &&
+    !draft.repoUrl.trim() &&
+    !draft.wallet.trim() &&
+    draft.milestones.every((m) => !m.title.trim() && !m.criteria.trim() && !m.amount.trim())
+  );
+}
 
 /** USDC display amounts are decimal; the API and chain want 6-decimal base units. */
 function toBaseUnits(amount: string): bigint | null {
@@ -43,7 +71,79 @@ export function ApplicationForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [restoredAt, setRestoredAt] = useState<string | null>(null);
+  // Autosaving starts only once the stored draft has been read back, or the first
+  // pass would see empty fields and wipe the very draft being restored. State, not
+  // a ref, so the save effect actually re-runs once the restore has happened.
+  const [hydrated, setHydrated] = useState(false);
+  // What was restored, so the save that follows a restore doesn't rewrite an
+  // identical draft and relabel "restored" as "saved" a moment later.
+  const restoredSnapshot = useRef<string | null>(null);
+
   const effectiveWallet = wallet.trim() || address || "";
+
+  useEffect(() => {
+    const draft = loadDraft<Draft>(DRAFT_KEY);
+    if (draft) {
+      setProjectName(draft.projectName ?? "");
+      setOrganisation(draft.organisation ?? "");
+      setPitch(draft.pitch ?? "");
+      setWebsite(draft.website ?? "");
+      setRepoUrl(draft.repoUrl ?? "");
+      setWallet(draft.wallet ?? "");
+      const milestones =
+        Array.isArray(draft.milestones) && draft.milestones.length > 0 ? draft.milestones : [{ ...EMPTY_MILESTONE }];
+      setMilestones(milestones);
+      setSavedAt(draft.savedAt ?? null);
+      setRestoredAt(draft.savedAt ?? null);
+      restoredSnapshot.current = JSON.stringify({
+        projectName: draft.projectName ?? "",
+        organisation: draft.organisation ?? "",
+        pitch: draft.pitch ?? "",
+        website: draft.website ?? "",
+        repoUrl: draft.repoUrl ?? "",
+        wallet: draft.wallet ?? "",
+        milestones,
+      });
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const snapshot = { projectName, organisation, pitch, website, repoUrl, wallet, milestones };
+    if (isBlank(snapshot)) {
+      clearDraft(DRAFT_KEY);
+      setSavedAt(null);
+      return;
+    }
+    // Nothing has been touched since the restore — leave the stored draft alone.
+    if (JSON.stringify(snapshot) === restoredSnapshot.current) return;
+    restoredSnapshot.current = null;
+    const timer = setTimeout(() => {
+      const now = new Date().toISOString();
+      saveDraft<Draft>(DRAFT_KEY, { ...snapshot, savedAt: now });
+      setSavedAt(now);
+      setRestoredAt(null);
+    }, SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [hydrated, projectName, organisation, pitch, website, repoUrl, wallet, milestones]);
+
+  const discardDraft = useCallback(() => {
+    clearDraft(DRAFT_KEY);
+    setProjectName("");
+    setOrganisation("");
+    setPitch("");
+    setWebsite("");
+    setRepoUrl("");
+    setWallet("");
+    setMilestones([{ ...EMPTY_MILESTONE }]);
+    setRepo(null);
+    setRepoError(null);
+    setSavedAt(null);
+    setRestoredAt(null);
+  }, []);
 
   const lookupRepo = useCallback(async () => {
     if (!repoUrl.trim()) return;
@@ -107,6 +207,7 @@ export function ApplicationForm() {
         return;
       }
       clearTicket("application");
+      clearDraft(DRAFT_KEY);
       router.push(`/applications/${payload.application.id}?submitted=1`);
     } catch (cause) {
       setError(String(cause));
@@ -349,6 +450,25 @@ export function ApplicationForm() {
           style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)" }}
         >
           {error}
+        </div>
+      )}
+
+      {savedAt && (
+        <div className="flex flex-wrap items-center gap-2.5 text-[12.5px]" style={{ opacity: 0.75 }}>
+          <span
+            className="h-1.5 w-1.5 flex-none rounded-full"
+            style={{ background: "var(--color-accent-2)" }}
+            aria-hidden
+          />
+          <span suppressHydrationWarning>
+            {restoredAt
+              ? `Draft restored from ${new Date(savedAt).toLocaleString()}`
+              : `Draft saved ${new Date(savedAt).toLocaleTimeString()}`}{" "}
+            — kept in this browser only, never sent anywhere until you submit.
+          </span>
+          <button className="btn-ghost" onClick={discardDraft}>
+            Discard draft
+          </button>
         </div>
       )}
 

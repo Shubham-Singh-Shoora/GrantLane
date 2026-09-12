@@ -17,8 +17,8 @@ The UMA-based `GrantEscrow` running against the real UMA Optimistic Oracle V3 an
 |---|---|---|
 | Fund the grant | Grantor | [`0x7917ff1e…3f78`](https://sepolia.basescan.org/tx/0x7917ff1e4e2badb53b3daad1d5eb0d770b12ab575bcc204a946b653201d93f78) |
 | Claim milestone 0, 1 USDC bond | Applicant | [`0x7963079e…c16c`](https://sepolia.basescan.org/tx/0x7963079e356f8b3c632b31a228d6178b8146d0fb0329074f881b25c50497c16c) |
-| Claim milestone 1, 1 USDC bond | Applicant | [`0xac4fe088…b30d`](https://sepolia.basescan.org/tx/0xac4fe08871b83b4d8cb76f531e7409c4a42dd4e88a56f53460effa0e7bc1b30d) |
-| Dispute milestone 1, 1 USDC bond | Grantor | [`0x25c0d1a3…e4f4`](https://sepolia.basescan.org/tx/0x25c0d1a3e9009288dd14ef01bf9c1272bb0bf25ce79c71d5a497a5692a33e4f4) |
+| Claim milestone 1, 1 USDC bond | Applicant | [`0xe26d3285…7080`](https://sepolia.basescan.org/tx/0xe26d3285110bcd9440d14fe0b5a5a6c39cee8270a35cb96d5c29e42619377080) |
+| Dispute milestone 1, 1 USDC bond | Grantor | [`0x33d45c8a…5b44`](https://sepolia.basescan.org/tx/0x33d45c8a819fe47ce1e7960472d5ce40ebcf4b6c9e9c4ff3d9cf6af57e0c5b44) |
 | UMA sandbox rules the claim false | UMA mock oracle | [`0xc1ae73df…492e`](https://sepolia.basescan.org/tx/0xc1ae73df44673f5eb99b32de7423e062bcb8bad17f544b4eb15f4f6c1a0b492e) |
 | Settle milestone 1 → Rejected | Anyone | [`0x3964b62d…84f3`](https://sepolia.basescan.org/tx/0x3964b62d98b4c391f7c0f22b06ce3c3cc390ae772dfdbd1c4ee14489303584f3) |
 | Settle milestone 0 after the window → Approved | Anyone | [`0x0a31766c…b956`](https://sepolia.basescan.org/tx/0x0a31766cf1d9980650a163838ae0def95dc40a6514bf458ffe3ad942e0dbb956) |
@@ -53,7 +53,7 @@ Chainlink Automation's testnet service was sunset on June 24, 2026, and its Base
 | Step | Who | Transaction |
 |---|---|---|
 | Deploy SettlementReceiver | Grantor | [`0xd03334a1…5ec0`](https://sepolia.basescan.org/tx/0xd03334a10caf6b140defeaf031fded2d8e93495f1cb6d2c6b8d69f123da15ec0) |
-| Re-claim milestone 1, now that the deployment is published | Applicant | [`0x60b1d6ec…a3f8`](https://sepolia.basescan.org/tx/0x60b1d6ec0cfb5bb002f6f1a6d5db456142eb2d37af8af0769a77015b994ca3f8) |
+| Re-claim milestone 1, now that the deployment is published | Applicant | [`0xc27f4bfe…0e51`](https://sepolia.basescan.org/tx/0xc27f4bfe910d1ae7b1d39d4ff3b153fd17efd7565630ac24a788a621593d0e51) |
 | Workflow run before the window closed: "No claims are past their dispute window." | CRE workflow | none, read only |
 | Workflow run after the window closed: settles milestone 1 → Approved | CRE workflow | [`0x1c0040c9…7333`](https://sepolia.basescan.org/tx/0x1c0040c9f0aeec982ac2a1363283a960f201f4c439782de6ae99a73548407333) |
 | Withdraw 2 USDC | Applicant | [`0x4baf0866…9142`](https://sepolia.basescan.org/tx/0x4baf0866baffed0b726b3e464298be6e793c51abb3f8c8a904d46f5ca5ca9142) |

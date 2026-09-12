@@ -1,10 +1,12 @@
 # Demo script
 
-A walkthrough of GrantLane in about four minutes, for a recording or a live demo. It uses two
+A walkthrough of GrantLane in about four minutes, for a recording or a live demo. It uses three
 wallets on Base Sepolia, each holding a little ETH for gas and a few USDC:
 
 - **Grantor**: an address in `NEXT_PUBLIC_GRANTER_ADDRESSES`.
 - **Applicant**: any other address, with World App for the Selfie Checks.
+- **A neutral wallet**: only for the dispute demo. Neither side of a dispute can answer it, so
+  someone uninvolved stands in for UMA's voters.
 
 The dispute window is 5 minutes, so start the claim early and talk over the countdown.
 
@@ -56,13 +58,14 @@ bond is already back.
 
 ## 5b. The dispute path (milestone 2)
 
-Claim milestone 2 with weak evidence. As the grantor, press **Dispute** (1 USDC bond). In the dashed
-**Testnet only** panel, answer **Claim was false**, then **Settle**. The milestone reads **Rejected**
-and reopens. The grantor received their bond back plus half the applicant's; the other half is
-UMA's burn.
+Claim milestone 2 with weak evidence. As the grantor, press **Dispute** (1 USDC bond). Point out that
+the dashed **Testnet only** panel gives the grantor no answer buttons: the app refuses the answer to
+both sides of a dispute. Switch to a **third wallet**, neither the claimant nor the disputer, answer
+**Claim was false**, then **Settle** from any wallet. The milestone reads **Rejected** and reopens.
+The grantor got their bond back plus half the applicant's; the other half is UMA's burn.
 
-> "On mainnet this dispute goes to UMA's token-holder vote. On testnet we answer it through UMA's
-> sandbox oracle, and the app says so."
+> "Neither side decides its own dispute. As the disputer I'm given no answer buttons at all — a
+> neutral wallet stands in for UMA's voters here, and on mainnet it's UMA's token holders who vote."
 
 ## 6. Chainlink CRE (30 s)
 

@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { erc20Abi, type Address, type Hex } from "viem";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
+import { CHAIN_ID } from "@/lib/chain";
 import { formatUsdc, grantEscrowAbi, publicClient, STATUS, type EscrowTerms } from "@/lib/contracts";
-import { formatDuration, statusName, statusNodeColors, statusTagClass } from "@/lib/status";
+import { formatDuration, shortAddress, statusName, statusNodeColors, statusTagClass } from "@/lib/status";
 import {
   ASSERT_TRUTH,
   UMA_FALSE,
@@ -13,6 +14,7 @@ import {
   UMA_SANDBOX_ORACLE_ADDRESS,
   UMA_TRUE,
   disputeAncillaryData,
+  umaAssertionAbi,
   umaOptimisticOracleAbi,
   umaSandboxOracleAbi,
 } from "@/lib/uma";
@@ -133,6 +135,24 @@ export function MilestoneCard({
   const [evidence, setEvidence] = useState<Evidence>(EMPTY_EVIDENCE);
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+
+  // Who raised the dispute lives on UMA, not in the escrow. Neither side of a
+  // dispute should be deciding it, so the answer buttons are offered only to a
+  // wallet with nothing at stake here.
+  const { data: assertion } = useReadContract({
+    address: UMA_OOV3_ADDRESS,
+    abi: umaAssertionAbi,
+    functionName: "getAssertion",
+    args: [milestone.assertionId],
+    chainId: CHAIN_ID,
+    query: { enabled: disputed && milestone.assertionId !== ZERO_HASH },
+  });
+  const disputer = assertion?.disputer;
+  const isParty =
+    !!address &&
+    (address.toLowerCase() === grantee.toLowerCase() ||
+      (!!disputer && address.toLowerCase() === disputer.toLowerCase()));
+  const canAnswerAsUma = isConnected && !!disputer && !isParty;
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -389,35 +409,63 @@ export function MilestoneCard({
                   takes the disputer&apos;s bond; if false the milestone reopens and the disputer takes the grantee&apos;s.
                   On mainnet this goes to UMA&apos;s token-holder vote.
                 </p>
+                {disputer && (
+                  <p className="m-0 text-[12.5px]" style={{ opacity: 0.7 }}>
+                    Claimed by <span className="mono">{shortAddress(grantee)}</span>, disputed by{" "}
+                    <span className="mono">{shortAddress(disputer)}</span>.
+                  </p>
+                )}
 
                 <div
                   className="flex flex-col gap-2.5 rounded-[18px] p-4"
                   style={{ border: "1.5px dashed color-mix(in srgb, var(--color-text) 25%, transparent)" }}
                 >
                   <p className="kicker m-0">Testnet only · stand-in for UMA&apos;s vote</p>
-                  <p className="m-0 text-[12.5px]" style={{ opacity: 0.75 }}>
-                    Base Sepolia answers disputes through UMA&apos;s sandbox oracle, which anyone can answer. Pick the
-                    outcome, then settle.
+                  {canAnswerAsUma ? (
+                    <>
+                      <p className="m-0 text-[12.5px]" style={{ opacity: 0.75 }}>
+                        You have nothing at stake in this dispute, so you can stand in for UMA&apos;s voters. Pick the
+                        outcome, then settle to apply it.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          className="btn-secondary font-body font-semibold"
+                          onClick={() => answerAsUma(true)}
+                          disabled={busy !== null}
+                        >
+                          {busy === "answer-true" ? "Answering…" : "Claim was true"}
+                        </button>
+                        <button
+                          className="btn-secondary font-body font-semibold"
+                          onClick={() => answerAsUma(false)}
+                          disabled={busy !== null}
+                        >
+                          {busy === "answer-false" ? "Answering…" : "Claim was false"}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="m-0 text-[12.5px]" style={{ opacity: 0.75 }}>
+                      {isParty
+                        ? "You have a bond riding on this dispute, so GrantLane won't hand you the answer — a wallet with nothing at stake has to give it. On mainnet neither side could: UMA's token holders vote."
+                        : !isConnected
+                          ? "Connect a wallet that is neither the claimant nor the disputer to stand in for UMA's voters."
+                          : "Checking who raised this dispute…"}
+                    </p>
+                  )}
+                  <p className="m-0 text-[11.5px]" style={{ opacity: 0.55 }}>
+                    UMA&apos;s sandbox oracle is open to anyone on-chain; withholding this from the two sides is
+                    GrantLane keeping the demo honest, not a guarantee the chain enforces.
                   </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      className="btn-secondary font-body font-semibold"
-                      onClick={() => answerAsUma(true)}
-                      disabled={!isConnected || busy !== null}
-                    >
-                      {busy === "answer-true" ? "Answering…" : "Claim was true"}
-                    </button>
-                    <button
-                      className="btn-secondary font-body font-semibold"
-                      onClick={() => answerAsUma(false)}
-                      disabled={!isConnected || busy !== null}
-                    >
-                      {busy === "answer-false" ? "Answering…" : "Claim was false"}
-                    </button>
-                    <button className="btn-primary" onClick={settle} disabled={!isConnected || busy !== null}>
-                      {busy === "settle" ? "Settling…" : "Settle"}
-                    </button>
-                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button className="btn-primary" onClick={settle} disabled={!isConnected || busy !== null}>
+                    {busy === "settle" ? "Settling…" : "Settle"}
+                  </button>
+                  <p className="m-0 flex-1 basis-[220px] text-[12px]" style={{ opacity: 0.6 }}>
+                    Anyone can settle once UMA has answered — settling only applies the answer.
+                  </p>
                 </div>
               </div>
             )}

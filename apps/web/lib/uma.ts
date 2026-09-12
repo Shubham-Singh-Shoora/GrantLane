@@ -29,6 +29,51 @@ export const umaOptimisticOracleAbi = [
   },
 ] as const;
 
+/**
+ * Reads an assertion back from the oracle. GrantEscrow doesn't record who disputed
+ * a claim — UMA does — and the UI needs it to keep the two sides of a dispute from
+ * answering their own case. Field order matches OptimisticOracleV3's Assertion
+ * struct and was checked against the deployed contract.
+ */
+export const umaAssertionAbi = [
+  {
+    type: "function",
+    name: "getAssertion",
+    stateMutability: "view",
+    inputs: [{ name: "assertionId", type: "bytes32" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          {
+            name: "escalationManagerSettings",
+            type: "tuple",
+            components: [
+              { name: "arbitrateViaEscalationManager", type: "bool" },
+              { name: "discardOracle", type: "bool" },
+              { name: "validateDisputers", type: "bool" },
+              { name: "assertingCaller", type: "address" },
+              { name: "escalationManager", type: "address" },
+            ],
+          },
+          { name: "asserter", type: "address" },
+          { name: "assertionTime", type: "uint64" },
+          { name: "settled", type: "bool" },
+          { name: "currency", type: "address" },
+          { name: "expirationTime", type: "uint64" },
+          { name: "settlementResolution", type: "bool" },
+          { name: "domainId", type: "bytes32" },
+          { name: "identifier", type: "bytes32" },
+          { name: "bond", type: "uint256" },
+          { name: "callbackRecipient", type: "address" },
+          { name: "disputer", type: "address" },
+        ],
+      },
+    ],
+  },
+] as const;
+
 export const umaSandboxOracleAbi = [
   {
     type: "function",

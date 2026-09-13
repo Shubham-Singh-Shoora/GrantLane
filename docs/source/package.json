@@ -1,0 +1,12 @@
+{
+  "name": "grantlane-docs",
+  "private": true,
+  "type": "module",
+  "description": "Builds the GrantLane PDF documentation from the HTML sources in this folder.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

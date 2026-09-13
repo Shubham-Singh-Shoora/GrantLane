@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GrantLane — CRE settlement workflow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<section class="cover">
+  <div class="kicker">GrantLane · Documentation</div>
+  <h1>CRE settlement workflow</h1>
+  <div class="bar"></div>
+  <p class="subtitle">How a Chainlink CRE workflow finds milestone claims whose dispute window has closed, and settles them without anyone pressing a button.</p>
+  <dl>
+    <dt>Runtime</dt><dd>Chainlink Runtime Environment (CRE), TypeScript SDK</dd>
+    <dt>Trigger</dt><dd>Cron, every minute</dd>
+    <dt>Chain</dt><dd>Base Sepolia (<code>ethereum-testnet-sepolia-base-1</code>)</dd>
+    <dt>Code</dt><dd><code>cre-workflow/settlement-workflow</code> · <code>contracts/src/automation</code></dd>
+    <dt>Updated</dt><dd>September 2026</dd>
+  </dl>
+</section>
+
+<main>
+
+<h2>1. Why it exists</h2>
+<p>A milestone claim in GrantLane is a UMA assertion with a dispute window. When the window closes without a dispute, the claim can be settled and the milestone paid. Settling is open to anyone, but somebody has to do it — otherwise an honest grantee waits for someone to press a button.</p>
+<p>The settlement workflow is that somebody. Every minute it checks the escrow for claims whose window has closed and settles them.</p>
+
+<div class="callout">
+  <p><strong>Why CRE and not Chainlink Automation.</strong> The escrow was built for Automation — it implements <code>checkUpkeep</code> and <code>performUpkeep</code>. Automation's testnet service was sunset in June 2026, and its Base Sepolia registry no longer performs upkeeps. The workflow follows Chainlink's documented migration from Automation to CRE: it runs the same <code>checkUpkeep</code> and reaches the same <code>performUpkeep</code>, so the escrow needed no change.</p>
+</div>
+
+<div class="callout olive">
+  <p><strong>A convenience, not a gate.</strong> The workflow can only do what any bystander can. If it stops, anyone can still settle from the app. It never decides an outcome — undisputed claims settle true because UMA says so, and disputed ones wait for their answer.</p>
+</div>
+
+<h2 class="page">2. Where it sits</h2>
+
+<figure class="diagram">
+<pre class="mermaid">
+flowchart TB
+  subgraph DON["Chainlink DON"]
+    direction LR
+    CRON[Cron trigger] --> HANDLER[settleExpiredClaims]
+  end
+  subgraph CHAIN["Base Sepolia"]
+    direction LR
+    FWD[KeystoneForwarder] -- onReport --> RCV[SettlementReceiver]
+    RCV -- performUpkeep --> ESC[GrantEscrow]
+    ESC -- settleAssertion --> OO[UMA Optimistic Oracle V3]
+  end
+  HANDLER -- reads checkUpkeep --> ESC
+  HANDLER -- sends signed report --> FWD
+</pre>
+<figcaption>Figure 1 — The workflow reads off-chain and writes through Chainlink's forwarder into a receiver that can only call the escrow's upkeep.</figcaption>
+</figure>
+
+<table>
+  <tr><th style="width:26%">Piece</th><th>Role</th></tr>
+  <tr><td><strong>Cron trigger</strong></td><td>Fires the handler on a schedule (<code>0 */1 * * * *</code>, every minute).</td></tr>
+  <tr><td><strong>Workflow handler</strong></td><td><code>settleExpiredClaims</code> in <code>main.ts</code>: reads, decides whether to write, builds and sends the report.</td></tr>
+  <tr><td><strong>KeystoneForwarder</strong></td><td>Chainlink's contract that checks the DON's signatures on a report and delivers it to a receiver.</td></tr>
+  <tr><td><strong>SettlementReceiver</strong></td><td>Ours. Accepts reports only from the forwarder and passes them to <code>GrantEscrow.performUpkeep</code>. Nothing else.</td></tr>
+  <tr><td><strong>GrantEscrow</strong></td><td>Finds expired claims (<code>checkUpkeep</code>) and settles them on UMA (<code>performUpkeep</code>).</td></tr>
+</table>
+
+<h2 class="page">3. One run, step by step</h2>
+
+<figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant T as Cron trigger
+  participant WF as Workflow handler
+  participant E as GrantEscrow
+  participant F as KeystoneForwarder
+  participant R as SettlementReceiver
+  participant U as UMA OOv3
+  T->>WF: Tick
+  WF->>E: callContract checkUpkeep(0x), read only
+  E-->>WF: upkeepNeeded, performData
+  alt nothing past its window
+    WF-->>T: settled 0, no transaction
+  else claims ready
+    WF->>WF: DON signs a report whose payload is performData
+    WF->>F: writeReport(receiver, report, gas limit)
+    F->>R: onReport(metadata, report)
+    R->>R: Check forwarder, decode claim ids
+    R->>E: performUpkeep(performData)
+    loop each expired claim, up to 10
+      E->>U: settleAssertion
+      U->>E: Callback: claim true
+    end
+    WF->>WF: Check transaction and receiver status
+  end
+</pre>
+<figcaption>Figure 2 — A run writes a transaction only when there is something to settle.</figcaption>
+</figure>
+
+<ol>
+  <li><strong>Read.</strong> The handler calls <code>checkUpkeep</code> on the escrow with the EVM capability's <code>callContract</code>. It is a view call: no gas, no transaction.</li>
+  <li><strong>Decide.</strong> If <code>upkeepNeeded</code> is false the run logs "No claims are past their dispute window" and ends.</li>
+  <li><strong>Report.</strong> Otherwise the DON signs a report. Its payload is the escrow's own <code>performData</code>, passed through unchanged — the ABI-encoded list of claim ids.</li>
+  <li><strong>Write.</strong> <code>writeReport</code> sends the report to the forwarder, addressed to the SettlementReceiver, with a 1,000,000 gas limit.</li>
+  <li><strong>Relay.</strong> The forwarder verifies the signatures and calls <code>onReport</code>. The receiver checks the caller is the forwarder, decodes the ids and calls <code>performUpkeep</code>.</li>
+  <li><strong>Settle.</strong> The escrow re-checks every id and settles each still-expired claim on UMA. UMA returns the bond and calls back; the escrow marks the milestone Approved and credits the payout.</li>
+  <li><strong>Confirm.</strong> The handler checks both the transaction status and the receiver's execution status. The forwarder's transaction can succeed while the receiver reverts inside it, so both are required.</li>
+</ol>
+
+<h2 class="page">4. The on-chain half</h2>
+
+<h3>GrantEscrow</h3>
+<table>
+  <tr><th style="width:28%">Function</th><th>Behaviour</th></tr>
+  <tr><td><code>checkUpkeep</code></td><td>Scans the undisputed claims awaiting settlement and returns up to 10 whose window has closed, encoded as <code>performData</code>.</td></tr>
+  <tr><td><code>performUpkeep</code></td><td>Open to anyone. Decodes the ids, caps the batch at 10, and for each id skips it unless it is still awaiting settlement and expired. Each settlement runs in its own try/catch; a failure emits <code>AutoSettleFailed</code> and the batch continues.</td></tr>
+</table>
+<p>Because <code>performUpkeep</code> re-validates everything it is given, stale or even invented input can do no harm: at worst it settles what anyone could already settle, or nothing.</p>
+
+<h3>SettlementReceiver</h3>
+<ul>
+  <li>Built on <code>ReceiverTemplate</code>: <code>onReport</code> rejects any caller other than the configured forwarder.</li>
+  <li>Optionally rejects reports not written by an expected workflow owner or workflow name (<code>setExpectedAuthor</code>, <code>setExpectedWorkflowName</code>).</li>
+  <li>Can only call <code>performUpkeep</code> on the one escrow it was deployed with. Chainlink's generic migration receiver forwards arbitrary calls; this one deliberately doesn't.</li>
+  <li>Emits <code>SettlementRelayed(claims)</code> for every report it passes on.</li>
+</ul>
+
+<h3>Measured gas</h3>
+<p>A full batch of 10 settlements through the real UMA oracle measured about <strong>581,000 gas</strong>. The workflow uses a <strong>1,000,000</strong> gas limit, leaving roughly 1.7× headroom. A fork test fails if a full batch ever exceeds it.</p>
+
+<h2 class="page">5. Files and configuration</h2>
+
+<pre class="tree">cre-workflow/
+├── project.yaml                  <span class="c">RPC endpoints per target</span>
+├── .env.example                  <span class="c">What the CRE CLI needs, documented</span>
+└── settlement-workflow/
+    ├── main.ts                   <span class="c">The workflow handler</span>
+    ├── workflow.yaml             <span class="c">Workflow name and files per target</span>
+    ├── config.staging.json       <span class="c">Used by simulation</span>
+    ├── config.production.json    <span class="c">Used by a DON deployment</span>
+    ├── package.json              <span class="c">@chainlink/cre-sdk, viem</span>
+    └── tsconfig.json
+
+contracts/src/automation/
+├── SettlementReceiver.sol        <span class="c">Report in, performUpkeep out</span>
+├── ReceiverTemplate.sol          <span class="c">Forwarder and author checks</span>
+└── IReceiver.sol</pre>
+
+<h3>Workflow config</h3>
+<table class="compact">
+  <tr><th style="width:32%">Field</th><th>Meaning</th></tr>
+  <tr><td><code>schedule</code></td><td>Cron expression with seconds. Every minute; CRE's minimum is 30 seconds.</td></tr>
+  <tr><td><code>evm.chainSelectorName</code></td><td><code>ethereum-testnet-sepolia-base-1</code></td></tr>
+  <tr><td><code>evm.grantEscrowAddress</code></td><td>The escrow whose <code>checkUpkeep</code> is read.</td></tr>
+  <tr><td><code>evm.settlementReceiverAddress</code></td><td>Where the report is delivered.</td></tr>
+  <tr><td><code>evm.gasLimit</code></td><td>Gas for the settlement transaction: 1,000,000.</td></tr>
+</table>
+
+<h3>Targets</h3>
+<table>
+  <tr><th style="width:24%">Target</th><th>Used for</th><th style="width:36%">Forwarder</th></tr>
+  <tr><td><code>staging-settings</code></td><td><code>cre workflow simulate</code> — runs locally; with <code>--broadcast</code> it sends a real transaction.</td><td>MockKeystoneForwarder <code>0x8230…f3e5</code>, which doesn't check DON signatures.</td></tr>
+  <tr><td><code>production-settings</code></td><td><code>cre workflow deploy</code> — runs on a Chainlink DON.</td><td>KeystoneForwarder <code>0xF834…4482</code>.</td></tr>
+</table>
+<p>The only secret the CLI needs is documented in <code>cre-workflow/.env.example</code>.</p>
+
+<h2 class="page">6. Running it</h2>
+<pre class="code">npm run workflow:typecheck     # type-check main.ts against the SDK
+npm run workflow:simulate      # one run, read only: logs what it would settle
+npm run workflow:broadcast     # one run that sends the settlement on Base Sepolia</pre>
+
+<p>A run with nothing to do prints:</p>
+<pre class="code">[USER LOG] No claims are past their dispute window.
+Workflow Simulation Result: {"settled":0}</pre>
+
+<p>A run that settles prints the claims and the transaction:</p>
+<pre class="code">[USER LOG] Settling 1 claim(s): 0xff4c…613e
+[USER LOG] Settlement relayed through SettlementReceiver: 0x1c00…7333
+Workflow Simulation Result: {"settled":1,"txHash":"0x1c00…7333"}</pre>
+
+<h3>Proven on Base Sepolia</h3>
+<p>Transaction <code>0x1c0040c9f0aeec982ac2a1363283a960f201f4c439782de6ae99a73548407333</code> is a broadcast run: a <code>report</code> call to the MockKeystoneForwarder, which delivered it to the SettlementReceiver, which called <code>performUpkeep</code> and settled a live claim on UMA. The grantee then withdrew the payout.</p>
+
+<h2 class="page">7. Status and going live</h2>
+
+<div class="callout">
+  <p><strong>Today:</strong> the workflow is built, tested and proven with real transactions, but it runs when started from the CRE CLI. Those runs are signed by our own wallet and pass through the mock forwarder. It is not yet autonomous, because deploying to a DON needs CRE deploy access, which has been requested.</p>
+</div>
+
+<h3>Once deploy access is granted</h3>
+<ol>
+  <li><strong>Point the receiver at the production forwarder</strong> with <code>setForwarderAddress</code>.</li>
+  <li><strong>Restrict it to our workflow</strong> with <code>setExpectedAuthor</code>, so only reports from our workflow owner are accepted.</li>
+  <li><strong>Deploy the workflow</strong> with <code>cre workflow deploy</code> using <code>production-settings</code>.</li>
+  <li><strong>Check it:</strong> make a claim and don't press Settle. About a minute after its window closes, the milestone should read Approved, settled by a transaction nobody on the team sent.</li>
+</ol>
+
+<h3>Details worth knowing</h3>
+<ul>
+  <li>The CRE SDK exports <code>TxStatus</code> but not <code>ReceiverContractExecutionStatus</code>; the workflow pins <code>SUCCESS = 0</code> from the protocol definition.</li>
+  <li>The report payload is <code>performData</code> itself, so no extra encoding exists to get wrong.</li>
+  <li>A simulated cron run executes once per command; only a deployed workflow runs on its schedule.</li>
+</ul>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script src="docs.js"></script>
+</body>
+</html>

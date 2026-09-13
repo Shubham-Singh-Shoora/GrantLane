@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GrantLane — Project structure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<section class="cover">
+  <div class="kicker">GrantLane · Documentation</div>
+  <h1>Project structure</h1>
+  <div class="bar"></div>
+  <p class="subtitle">Every folder and module in the repository, what it is responsible for, and how the modules depend on one another.</p>
+  <dl>
+    <dt>Languages</dt><dd>Solidity · TypeScript</dd>
+    <dt>Frameworks</dt><dd>Foundry · Next.js 14 · wagmi / viem · Chainlink CRE SDK</dd>
+    <dt>Companion docs</dt><dd>Architecture · CRE settlement workflow</dd>
+    <dt>Updated</dt><dd>September 2026</dd>
+  </dl>
+</section>
+
+<main>
+
+<h2>1. The repository at a glance</h2>
+<p>Three independent parts — the contracts, the web app and the Chainlink workflow — share one repository, with documentation and two helper scripts alongside.</p>
+
+<pre class="tree">GrantLane/
+├── contracts/                <span class="c">Solidity: the escrow, the CRE receiver, tests and scripts (Foundry)</span>
+│   ├── src/                  <span class="c">Deployed contracts and the interfaces they use</span>
+│   ├── test/                 <span class="c">Unit tests, receiver tests, fork tests against live UMA</span>
+│   └── script/               <span class="c">Deploy scripts and a step-by-step demo driver</span>
+├── apps/web/                 <span class="c">Next.js app: pages, API routes, components, libraries</span>
+│   ├── app/                  <span class="c">Routes — pages and API endpoints</span>
+│   ├── components/           <span class="c">React components</span>
+│   └── lib/                  <span class="c">Chain access, UMA, World ID, storage, helpers</span>
+├── cre-workflow/             <span class="c">Chainlink CRE project</span>
+│   └── settlement-workflow/  <span class="c">Cron workflow that settles expired claims</span>
+├── scripts/                  <span class="c">ABI generation and a development seeder</span>
+├── docs/                     <span class="c">These PDFs, their sources, and supporting notes</span>
+├── .env.example              <span class="c">Every configuration value, documented</span>
+├── DEPLOYMENT.md             <span class="c">Deploying the web app</span>
+├── package.json              <span class="c">Root commands that wrap each part</span>
+└── README.md</pre>
+
+<figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph WEBAPP["apps/web"]
+    PAGES["app/ pages"] --> COMP["components/"]
+    COMP --> LIB["lib/"]
+    PAGES --> LIB
+    APIR["app/api/ routes"] --> LIB
+    COMP -- fetch --> APIR
+  end
+  LIB -- ABI generated from --> CON["contracts/src"]
+  LIB -- reads and writes --> CHAIN[(Base Sepolia)]
+  CON -- deployed to --> CHAIN
+  WF["cre-workflow/"] -- settles through --> CHAIN
+  SCR["scripts/gen-abi.mjs"] -- writes --> LIB
+</pre>
+<figcaption>Figure 1 — How the parts depend on each other. The web app's ABI is generated from the compiled contracts.</figcaption>
+</figure>
+
+<h2 class="page">2. contracts/</h2>
+<p>A Foundry project, Solidity 0.8.24 with OpenZeppelin 5.1. Dependencies live in <code>contracts/lib/</code> and are installed, not committed.</p>
+
+<h3>src/ — what is deployed</h3>
+<table>
+  <tr><th style="width:47%">File</th><th>Responsibility</th></tr>
+  <tr><td><code>GrantEscrow.sol</code></td><td>The escrow. Funds grants, turns milestone claims into UMA assertions with a USDC bond, receives UMA's callbacks, credits approved payouts for withdrawal, exposes permissionless settlement and Automation-style upkeep, and verifies the EIP-712 Selfie Check attestations for claims and payout-wallet changes.</td></tr>
+  <tr><td><code>automation/SettlementReceiver.sol</code></td><td>Receives the CRE workflow's report and forwards it to <code>GrantEscrow.performUpkeep</code>. Can call nothing else.</td></tr>
+  <tr><td><code>automation/ReceiverTemplate.sol</code></td><td>Base for CRE receivers: accepts reports only from the configured forwarder, optionally only from an expected workflow owner or name.</td></tr>
+  <tr><td><code>automation/IReceiver.sol</code></td><td>The report-receiving interface CRE's forwarder calls.</td></tr>
+  <tr><td><code>interfaces/IOptimisticOracleV3.sol</code></td><td>The subset of UMA's oracle the escrow calls.</td></tr>
+  <tr><td><code>interfaces/IOptimisticOracleV3CallbackRecipient.sol</code></td><td>The callbacks UMA makes when a claim is disputed or resolved.</td></tr>
+  <tr><td><code>interfaces/AutomationCompatibleInterface.sol</code></td><td><code>checkUpkeep</code> / <code>performUpkeep</code>, the upkeep interface the workflow drives.</td></tr>
+</table>
+
+<h3>GrantEscrow's external functions</h3>
+<table class="compact">
+  <tr><th style="width:36%">Function</th><th style="width:18%">Who</th><th>What it does</th></tr>
+  <tr><td><code>createGrant</code></td><td>Grantor</td><td>Escrows the full total and commits the terms hash.</td></tr>
+  <tr><td><code>submitMilestone</code></td><td>Grantee</td><td>Checks the attestation, pulls the bond, asserts the claim on UMA.</td></tr>
+  <tr><td><code>settle</code></td><td>Anyone</td><td>Settles a claim whose window closed or whose dispute is answered.</td></tr>
+  <tr><td><code>withdraw</code></td><td>Payout wallet</td><td>Sends everything credited to the caller.</td></tr>
+  <tr><td><code>assertionResolvedCallback</code></td><td>UMA only</td><td>Approves and credits, or rejects and reopens.</td></tr>
+  <tr><td><code>assertionDisputedCallback</code></td><td>UMA only</td><td>Marks the milestone Disputed.</td></tr>
+  <tr><td><code>checkUpkeep</code> / <code>performUpkeep</code></td><td>Anyone / CRE</td><td>Finds and settles expired, undisputed claims in batches of up to 10.</td></tr>
+  <tr><td><code>changePayoutWallet</code></td><td>Grantee</td><td>Repoints payouts, gated on a Selfie Check attestation.</td></tr>
+  <tr><td><code>closeGrant</code></td><td>Grantor</td><td>Refunds unreleased funds; refused while a claim is open.</td></tr>
+  <tr><td><code>setAttestor</code></td><td>Owner</td><td>Replaces the attestor address.</td></tr>
+  <tr><td><code>getGrant</code>, <code>getMilestones</code>, <code>awaitingSettlement</code></td><td>Anyone</td><td>Views the app reads.</td></tr>
+</table>
+
+<h3>test/</h3>
+<table>
+  <tr><th style="width:36%">File</th><th>What it proves</th></tr>
+  <tr><td><code>GrantEscrow.t.sol</code></td><td>45 unit tests: funding, claims, attestations, undisputed and disputed paths, callbacks, withdrawals, closing, upkeep, payout-wallet changes.</td></tr>
+  <tr><td><code>mocks/MockOptimisticOracleV3.sol</code></td><td>A mock oracle that follows UMA's bond and callback rules, for the unit tests.</td></tr>
+  <tr><td><code>SettlementReceiver.t.sol</code></td><td>8 tests: forwarder and author checks, pass-through of performData, forwarder switch.</td></tr>
+  <tr><td><code>GrantEscrow.fork.t.sol</code></td><td>7 tests against the real UMA oracle and Circle USDC on a Base Sepolia fork, including disputes and a full upkeep batch within its gas limit.</td></tr>
+</table>
+
+<h3>script/</h3>
+<table>
+  <tr><th style="width:36%">File</th><th>Purpose</th></tr>
+  <tr><td><code>Deploy.s.sol</code></td><td>Deploys GrantEscrow with the oracle, USDC, attestor, dispute window and bond.</td></tr>
+  <tr><td><code>DeploySettlementReceiver.s.sol</code></td><td>Deploys the receiver pointed at an escrow and a CRE forwarder.</td></tr>
+  <tr><td><code>Demo.s.sol</code></td><td>Drives a live escrow one step per call: fund, claim, dispute, answer, settle, withdraw, status.</td></tr>
+  <tr><td><code>UmaSandbox.sol</code></td><td>Rebuilds the request data UMA's sandbox oracle needs to answer a dispute.</td></tr>
+</table>
+<p><code>foundry.toml</code> sets the compiler and the <code>base_sepolia</code> RPC endpoint; <code>remappings.txt</code> maps the library imports.</p>
+
+<h2 class="page">3. apps/web/</h2>
+<p>A Next.js 14 App Router app in TypeScript, styled with Tailwind on CSS-variable design tokens. Wallet access is wagmi and viem; storage goes through a small key-value layer.</p>
+
+<h3>app/ — pages</h3>
+<table>
+  <tr><th style="width:24%">Route</th><th style="width:14%">Who</th><th>What it shows</th></tr>
+  <tr><td><code>/</code></td><td>Everyone</td><td>The landing page explaining the product.</td></tr>
+  <tr><td><code>/apply</code></td><td>Applicant</td><td>The application form, with Selfie Check and an autosaved draft.</td></tr>
+  <tr><td><code>/my</code></td><td>Applicant</td><td>Your applications and their status, with optional desktop notifications.</td></tr>
+  <tr><td><code>/applications</code></td><td>Grantor</td><td>The review queue.</td></tr>
+  <tr><td><code>/applications/[id]</code></td><td>Grantor, owner</td><td>One application: the grantor's scope-and-fund panel, or the applicant's progress.</td></tr>
+  <tr><td><code>/grants</code></td><td>Everyone</td><td>Every grant on the escrow and its progress.</td></tr>
+  <tr><td><code>/grant/[id]</code></td><td>Everyone</td><td>A grant's milestones, with claim, dispute, answer, settle and withdraw actions.</td></tr>
+  <tr><td><code>/evidence/[hash]</code></td><td>Everyone</td><td>The evidence behind a claim, with its hashes checked against the chain.</td></tr>
+  <tr><td><code>/admin</code></td><td>Grantor</td><td>The audit view: totals, open claims, disputes, deployment details.</td></tr>
+  <tr><td><code>/verify</code></td><td>Everyone</td><td>A standalone Selfie Check.</td></tr>
+</table>
+<p>Also in <code>app/</code>: <code>layout.tsx</code> (fonts, theme, navigation, analytics), <code>providers.tsx</code> (wallet, data fetching and role context), <code>globals.css</code> (the design tokens) and <code>icon.svg</code>.</p>
+
+<h3>app/api/ — server routes</h3>
+<table>
+  <tr><th style="width:36%">Endpoint</th><th>Purpose</th></tr>
+  <tr><td><code>GET /api/applications</code></td><td>Lists applications; <code>?wallet=</code> narrows to one applicant. Adds whether each funded grant is completed.</td></tr>
+  <tr><td><code>POST /api/applications</code></td><td>Submits an application. Requires a Selfie Check ticket; one open application per person.</td></tr>
+  <tr><td><code>GET / PATCH /api/applications/[id]</code></td><td>Reads one application; records approve, decline, or funded — the last only if the terms hash matches the chain.</td></tr>
+  <tr><td><code>POST /api/milestones</code></td><td>Prepares a claim: validates the evidence, stores it under its hash, signs the MilestoneClaim attestation.</td></tr>
+  <tr><td><code>GET /api/milestones?hash=</code></td><td>Returns a stored evidence bundle.</td></tr>
+  <tr><td><code>POST /api/verify-selfie</code></td><td>Verifies a Selfie Check proof with World and returns a ticket, or a payout-wallet attestation.</td></tr>
+  <tr><td><code>GET /api/idkit-context</code></td><td>Returns a request context signed with the Relying Party key, which World ID requires.</td></tr>
+  <tr><td><code>GET /api/github</code></td><td>Fetches a public repository snapshot for an application.</td></tr>
+</table>
+
+<h3 class="page">components/</h3>
+<h4>Grants and milestones</h4>
+<table class="compact">
+  <tr><td style="width:30%"><code>GrantDetail</code></td><td>The grant page layout; re-reads the chain while a claim is in flight.</td></tr>
+  <tr><td><code>MilestoneCard</code></td><td>One milestone: claim form, dispute-window countdown, dispute, testnet answer (withheld from both sides), settle once answered.</td></tr>
+  <tr><td><code>EscrowStatus</code></td><td>Escrowed and released totals, open claims, bond and window.</td></tr>
+  <tr><td><code>WithdrawPanel</code></td><td>Shows and withdraws the connected wallet's credited payouts.</td></tr>
+  <tr><td><code>PayoutWalletPanel</code></td><td>Changes the payout wallet after a Selfie Check.</td></tr>
+</table>
+<h4>Applications</h4>
+<table class="compact">
+  <tr><td style="width:30%"><code>ApplicationForm</code></td><td>The application form, autosaving a draft in the browser.</td></tr>
+  <tr><td><code>ReviewPanel</code></td><td>Grantor: adjust milestones, approve, decline, escrow. Applicant: progress steps.</td></tr>
+  <tr><td><code>MyApplications</code></td><td>The applicant's list, polled for status changes.</td></tr>
+  <tr><td><code>ApplicationStageTag</code></td><td>One status label everywhere: In review, Scope agreed, Escrowed, Completed, Declined.</td></tr>
+  <tr><td><code>ApplicationAccess</code></td><td>Lets only the grantor or the applicant open an application.</td></tr>
+  <tr><td><code>GranterOnly</code></td><td>Hides grantor pages from other wallets.</td></tr>
+  <tr><td><code>GithubRepoCard</code></td><td>Repository stats snapshot.</td></tr>
+  <tr><td><code>NotifyToggle</code></td><td>Opt-in desktop notifications when a decision changes.</td></tr>
+</table>
+<h4>World ID</h4>
+<table class="compact">
+  <tr><td style="width:30%"><code>SelfieGate</code></td><td>"Prove you're a live human, then continue" — used before applying and claiming.</td></tr>
+  <tr><td><code>SelfieCheckRunner</code></td><td>Runs the IDKit request and reports its result.</td></tr>
+  <tr><td><code>SelfieCheckButton</code></td><td>Selfie Check for a payout-wallet change, returning an attestation.</td></tr>
+  <tr><td><code>QrCode</code></td><td>Renders the World App link as a scannable QR code.</td></tr>
+</table>
+<h4>Shell and presentation</h4>
+<table class="compact">
+  <tr><td style="width:30%"><code>NavTabs</code>, <code>RoleProvider</code>, <code>RoleSwitch</code></td><td>Navigation, and whether the connected wallet is a grantor.</td></tr>
+  <tr><td><code>WalletBadge</code>, <code>ThemeToggle</code></td><td>Wallet connection and network switch; light and dark themes.</td></tr>
+  <tr><td><code>Landing</code>, <code>Logo</code>, <code>Reveal</code></td><td>The landing page, the brand mark, scroll-in animation.</td></tr>
+  <tr><td><code>SetupNotice</code>, <code>ConfigDisclosure</code></td><td>Configuration errors, and deployment details on the audit page.</td></tr>
+</table>
+
+<h3 class="page">lib/</h3>
+<h4>Chain and contracts</h4>
+<table class="compact">
+  <tr><td style="width:30%"><code>chain.ts</code></td><td>The Base Sepolia chain definition and explorer links.</td></tr>
+  <tr><td><code>contracts.ts</code></td><td>The read client, contract addresses, grant and milestone readers, status names, USDC formatting.</td></tr>
+  <tr><td><code>grantEscrowAbi.ts</code></td><td>The escrow ABI, generated from the compiled contract.</td></tr>
+  <tr><td><code>useChainTx.ts</code></td><td>Sends a transaction: switches network, waits to be mined, waits for the read node to catch up, surfaces reverts.</td></tr>
+  <tr><td><code>grantProgress.ts</code></td><td>Whether a funded grant has paid every milestone.</td></tr>
+  <tr><td><code>status.ts</code></td><td>How grant, application and milestone states are labelled and coloured.</td></tr>
+</table>
+<h4>UMA and integrity</h4>
+<table class="compact">
+  <tr><td style="width:30%"><code>uma.ts</code></td><td>UMA addresses and ABIs: dispute, read an assertion, check and push a dispute answer.</td></tr>
+  <tr><td><code>commitments.ts</code></td><td>Canonical terms and evidence hashing.</td></tr>
+  <tr><td><code>eip712.ts</code></td><td>The typed-data shapes the attestor signs and the escrow verifies.</td></tr>
+</table>
+<h4>Identity and authorisation</h4>
+<table class="compact">
+  <tr><td style="width:30%"><code>world.ts</code></td><td>World ID server side: signed request contexts and proof verification.</td></tr>
+  <tr><td><code>verifications.ts</code></td><td>HMAC-signed verification tickets.</td></tr>
+  <tr><td><code>attestor.ts</code></td><td>Signs claim and payout-wallet attestations.</td></tr>
+  <tr><td><code>access.ts</code></td><td>The grantor allowlist.</td></tr>
+  <tr><td><code>ticket-cache.ts</code></td><td>Keeps a ticket through reloads so a Selfie Check isn't repeated.</td></tr>
+</table>
+<h4>Data</h4>
+<table class="compact">
+  <tr><td style="width:30%"><code>kv.ts</code></td><td>Key-value storage: Redis in production, a JSON file locally.</td></tr>
+  <tr><td><code>applications.ts</code></td><td>Applications: create, read, update, one-open-per-person rule.</td></tr>
+  <tr><td><code>store.ts</code></td><td>Evidence bundles, keyed by hash.</td></tr>
+  <tr><td><code>github.ts</code></td><td>Public repository lookups.</td></tr>
+  <tr><td><code>form-draft.ts</code></td><td>Browser-only form drafts.</td></tr>
+</table>
+<p>Configuration files: <code>next.config.mjs</code>, <code>tailwind.config.ts</code>, <code>postcss.config.mjs</code>, <code>tsconfig.json</code>, <code>vercel.json</code>.</p>
+
+<h2 class="page">4. cre-workflow/</h2>
+<table>
+  <tr><th style="width:40%">File</th><th>Purpose</th></tr>
+  <tr><td><code>project.yaml</code></td><td>CRE project settings: the RPCs for each target.</td></tr>
+  <tr><td><code>settlement-workflow/main.ts</code></td><td>The workflow: on each cron tick, read <code>checkUpkeep</code> and write a settlement report when claims are ready.</td></tr>
+  <tr><td><code>settlement-workflow/workflow.yaml</code></td><td>Workflow name and files per target.</td></tr>
+  <tr><td><code>settlement-workflow/config.*.json</code></td><td>Schedule, chain, escrow and receiver addresses, gas limit — for simulation (staging) and a DON deployment (production).</td></tr>
+  <tr><td><code>settlement-workflow/package.json</code>, <code>tsconfig.json</code></td><td>SDK dependency and TypeScript settings.</td></tr>
+</table>
+<p>See the CRE settlement workflow document for how it runs.</p>
+
+<h2>5. scripts/ and docs/</h2>
+<table>
+  <tr><th style="width:40%">Path</th><th>Purpose</th></tr>
+  <tr><td><code>scripts/gen-abi.mjs</code></td><td>Regenerates <code>apps/web/lib/grantEscrowAbi.ts</code> from the compiled contract.</td></tr>
+  <tr><td><code>scripts/seed-applications.mjs</code></td><td>Development only: adds sample applications. Never run it against a public deployment.</td></tr>
+  <tr><td><code>docs/*.pdf</code></td><td>This documentation.</td></tr>
+  <tr><td><code>docs/source/</code></td><td>The HTML sources of these PDFs and the script that renders them.</td></tr>
+  <tr><td><code>docs/base-sepolia-evidence.md</code></td><td>Every transaction from the live runs, with explorer links.</td></tr>
+  <tr><td><code>docs/demo-script.md</code></td><td>A four-minute demo walkthrough.</td></tr>
+  <tr><td><code>docs/world-feedback.md</code></td><td>Notes from integrating World ID.</td></tr>
+  <tr><td><code>docs/cre-evidence/</code></td><td>Historical: the earlier CRE scoring design on Arc.</td></tr>
+</table>
+
+<h2 class="page">6. Running it</h2>
+<p>Configuration is documented in <code>.env.example</code>. Copy it and fill in the values before running anything that talks to the chain or World ID.</p>
+
+<h4>Web app</h4>
+<pre class="code">npm install --prefix apps/web
+npm run dev                  # http://localhost:3001</pre>
+
+<h4>Contracts</h4>
+<pre class="code">npm run contracts:build
+npm run contracts:test       # unit and receiver tests; fork tests run when an RPC is configured</pre>
+
+<h4>CRE workflow</h4>
+<pre class="code">npm run workflow:typecheck
+npm run workflow:simulate    # reads checkUpkeep, reports what it would settle
+npm run workflow:broadcast   # the same, sending the settlement on Base Sepolia</pre>
+
+<h4>After changing the contract</h4>
+<pre class="code">npm run contracts:build
+npm run gen:abi              # refresh the web app's ABI</pre>
+
+<h4>Rebuilding this documentation</h4>
+<pre class="code">cd docs/source
+npm install
+npm run build                # writes the PDFs into docs/</pre>
+<p>Foundry, Bun and the CRE CLI are Linux-first; on Windows the root commands run them under WSL.</p>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script src="docs.js"></script>
+</body>
+</html>

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { erc20Abi, type Address, type Hex } from "viem";
 import { useAccount, useReadContract } from "wagmi";
 import { CHAIN_ID } from "@/lib/chain";
-import { formatUsdc, grantEscrowAbi, publicClient, STATUS, type EscrowTerms } from "@/lib/contracts";
+import { disputeRegistryAbi, formatUsdc, grantEscrowAbi, publicClient, STATUS, type EscrowTerms } from "@/lib/contracts";
 import { formatDuration, shortAddress, statusName, statusNodeColors, statusTagClass } from "@/lib/status";
 import {
   ASSERT_TRUTH,
@@ -15,11 +15,11 @@ import {
   UMA_TRUE,
   disputeAncillaryData,
   umaAssertionAbi,
-  umaOptimisticOracleAbi,
   umaSandboxOracleAbi,
 } from "@/lib/uma";
 import { txErrorMessage, useChainTx } from "@/lib/useChainTx";
 import { clearTicket } from "@/lib/ticket-cache";
+import { DisputeHistory } from "./DisputeHistory";
 import { SelfieGate } from "./SelfieGate";
 
 export type MilestoneView = {
@@ -38,6 +38,8 @@ export type MilestoneView = {
 const ZERO_HASH = `0x${"0".repeat(64)}`;
 const MIN_SUMMARY = 40;
 const MAX_SCREENSHOTS = 6;
+const MIN_DISPUTE_REASON = 40;
+const MAX_DISPUTE_LINKS = 6;
 
 type Evidence = { summary: string; liveUrl: string; demoVideoUrl: string; repoUrl: string; screenshots: string };
 const EMPTY_EVIDENCE: Evidence = { summary: "", liveUrl: "", demoVideoUrl: "", repoUrl: "", screenshots: "" };
@@ -68,6 +70,17 @@ function evidenceProblem(e: Evidence): string | null {
   const shots = lines(e.screenshots);
   if (shots.length > MAX_SCREENSHOTS) return `Up to ${MAX_SCREENSHOTS} screenshot links.`;
   const badLink = [...links, ...shots].find((u) => !isHttpUrl(u));
+  if (badLink) return `Not a valid link: ${badLink}`;
+  return null;
+}
+
+/** Mirrors /api/disputes, so a disputer hears about a problem before approving a bond. */
+function disputeProblem(reason: string, links: string[]): string | null {
+  if (reason.trim().length < MIN_DISPUTE_REASON) {
+    return `Explain what's wrong with the claim in at least ${MIN_DISPUTE_REASON} characters.`;
+  }
+  if (links.length > MAX_DISPUTE_LINKS) return `Up to ${MAX_DISPUTE_LINKS} links.`;
+  const badLink = links.find((u) => !isHttpUrl(u));
   if (badLink) return `Not a valid link: ${badLink}`;
   return null;
 }
@@ -133,6 +146,9 @@ export function MilestoneCard({
   const [techOpen, setTechOpen] = useState(false);
   const [ticket, setTicket] = useState<string | null>(null);
   const [evidence, setEvidence] = useState<Evidence>(EMPTY_EVIDENCE);
+  const [disputeOpen, setDisputeOpen] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [disputeLinks, setDisputeLinks] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
 
@@ -185,6 +201,7 @@ export function MilestoneCard({
   const [error, setError] = useState<string | null>(null);
 
   const problem = evidenceProblem(evidence);
+  const disputeIssue = disputeProblem(disputeReason, lines(disputeLinks));
 
   /** Runs one user action: one busy flag, one error slot, and a refresh from the chain afterwards. */
   const run = useCallback(
@@ -270,19 +287,48 @@ export function MilestoneCard({
       return `Claim submitted. It's open to dispute for ${formatDuration(liveness)}.`;
     });
 
+  // A dispute goes through DisputeRegistry, never straight to UMA: in one transaction
+  // it raises the dispute in the disputer's name and records the hash of their reason.
   const dispute = () =>
     run("dispute", async () => {
       if (!address) throw new Error("Connect a wallet first.");
-      setProgress(`1/2 · Approving your ${formatUsdc(bond)} USDC dispute bond for UMA…`);
-      await ensureAllowance(UMA_OOV3_ADDRESS);
-      setProgress("2/2 · Disputing the claim on UMA…");
-      await send({
-        address: UMA_OOV3_ADDRESS,
-        abi: umaOptimisticOracleAbi,
-        functionName: "disputeAssertion",
-        args: [milestone.assertionId, address],
+      const registry = terms.disputeRegistryAddress;
+      if (!registry) throw new Error("Disputes aren't configured on this deployment.");
+
+      setProgress("1/3 · Publishing your reason…");
+      const response = await fetch("/api/disputes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grantId,
+          milestoneId: milestone.milestoneId,
+          reason: disputeReason,
+          links: lines(disputeLinks),
+        }),
       });
-      return "Disputed. UMA now decides; whoever is wrong loses their bond.";
+      const prepared = await response.json();
+      if (!response.ok) throw new Error(prepared.detail ?? prepared.error ?? "Could not prepare the dispute.");
+
+      setProgress(`2/3 · Approving your ${formatUsdc(bond)} USDC dispute bond…`);
+      await ensureAllowance(registry);
+
+      setProgress("3/3 · Disputing on UMA and recording your reason on-chain…");
+      await send({
+        address: registry,
+        abi: disputeRegistryAbi,
+        functionName: "dispute",
+        args: [
+          BigInt(grantId),
+          BigInt(milestone.milestoneId),
+          prepared.reasonHash as Hex,
+          prepared.reasonURI as string,
+        ],
+      });
+
+      setDisputeOpen(false);
+      setDisputeReason("");
+      setDisputeLinks("");
+      return "Disputed. Your reason is recorded on-chain; UMA now decides, and whoever is wrong loses their bond.";
     });
 
   const answerAsUma = (claimWasTrue: boolean) =>
@@ -295,7 +341,9 @@ export function MilestoneCard({
       });
       await refetchAnswered();
       await refetchAnswer();
-      return `Answered: the claim was ${claimWasTrue ? "true" : "false"}. Settle to apply it.`;
+      return claimWasTrue
+        ? "Answered: the grantee is right. Settle to approve the milestone."
+        : "Answered: the disputer is right. Settle to reject the claim.";
     });
 
   const settle = () =>
@@ -315,7 +363,9 @@ export function MilestoneCard({
       : ` · open to dispute for ${countdown(secondsLeft)}`
     : disputed
       ? answered
-        ? " · answered, ready to settle"
+        ? answer === UMA_TRUE
+          ? " · grantee judged right, ready to settle"
+          : " · disputer judged right, ready to settle"
         : " · disputed, awaiting an answer"
       : "";
 
@@ -378,6 +428,16 @@ export function MilestoneCard({
               </a>
             )}
 
+            {terms.disputeRegistryAddress && (
+              <DisputeHistory
+                registry={terms.disputeRegistryAddress}
+                grantId={grantId}
+                milestoneId={milestone.milestoneId}
+                currentAssertionId={milestone.assertionId}
+                live={claimed || disputed}
+              />
+            )}
+
             {/* — claimed: inside the dispute window — */}
             {claimed && (
               <div
@@ -404,12 +464,16 @@ export function MilestoneCard({
                 <p className="m-0 text-[12.5px]" style={{ opacity: 0.75 }}>
                   {windowClosed
                     ? "The window has closed. Anyone can settle it now to release the funds and return the bond."
-                    : `The grantee posted a ${formatUsdc(bond)} USDC bond. If nobody disputes before the timer runs out, the milestone pays out. Anyone can dispute by matching the bond; UMA then decides, and whoever is wrong loses theirs.`}
+                    : `The grantee posted a ${formatUsdc(bond)} USDC bond. If nobody disputes before the timer runs out, the milestone pays out. Anyone can dispute by explaining what's wrong and matching the bond; UMA then decides, and whoever is wrong loses theirs.`}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {!windowClosed && isConnected && !isGrantee && (
-                    <button className="btn-secondary font-body font-semibold" onClick={dispute} disabled={busy !== null}>
-                      {busy === "dispute" ? "Disputing…" : `Dispute · ${formatUsdc(bond)} USDC bond`}
+                  {!windowClosed && isConnected && !isGrantee && !disputeOpen && (
+                    <button
+                      className="btn-secondary font-body font-semibold"
+                      onClick={() => setDisputeOpen(true)}
+                      disabled={busy !== null || !terms.disputeRegistryAddress}
+                    >
+                      Dispute this claim
                     </button>
                   )}
                   {windowClosed && (
@@ -418,6 +482,63 @@ export function MilestoneCard({
                     </button>
                   )}
                 </div>
+                {!windowClosed && isConnected && !isGrantee && !terms.disputeRegistryAddress && (
+                  <p className="m-0 text-[12px]" style={{ opacity: 0.65 }}>
+                    Disputes aren&apos;t configured on this deployment.
+                  </p>
+                )}
+
+                {!windowClosed && disputeOpen && (
+                  <div
+                    className="animate-rise flex flex-col gap-3 rounded-[18px] p-4"
+                    style={{ background: "color-mix(in srgb, var(--color-bg) 70%, transparent)" }}
+                  >
+                    <div className="field">
+                      <label htmlFor={`dispute-reason-${milestone.milestoneId}`}>What&apos;s wrong with this claim?</label>
+                      <textarea
+                        id={`dispute-reason-${milestone.milestoneId}`}
+                        className="input"
+                        value={disputeReason}
+                        onChange={(e) => setDisputeReason(e.target.value)}
+                        placeholder="Be specific: which criterion isn't met, and how anyone can check it."
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`dispute-links-${milestone.milestoneId}`}>
+                        Links that back it up — optional, one per line
+                      </label>
+                      <textarea
+                        id={`dispute-links-${milestone.milestoneId}`}
+                        className="input mono text-[12.5px]"
+                        style={{ minHeight: 56 }}
+                        value={disputeLinks}
+                        onChange={(e) => setDisputeLinks(e.target.value)}
+                        placeholder="https://…"
+                      />
+                    </div>
+                    {disputeIssue && disputeReason.length > 0 && (
+                      <p className="m-0 text-xs" style={{ color: "var(--color-accent-700)" }}>
+                        {disputeIssue}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button className="btn-primary" onClick={dispute} disabled={busy !== null || disputeIssue !== null}>
+                        {busy === "dispute" ? "Disputing…" : `Dispute with a ${formatUsdc(bond)} USDC bond`}
+                      </button>
+                      <button
+                        className="btn-secondary font-body font-semibold"
+                        onClick={() => setDisputeOpen(false)}
+                        disabled={busy !== null}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <p className="m-0 text-[12px]" style={{ opacity: 0.6 }}>
+                      Your reason is published and its hash is recorded on-chain with the dispute. It stays visible to
+                      everyone whatever UMA decides.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -429,9 +550,9 @@ export function MilestoneCard({
               >
                 <p className="m-0 font-heading text-base">Disputed — UMA decides</p>
                 <p className="m-0 text-[12.5px]" style={{ opacity: 0.75 }}>
-                  Both sides have a {formatUsdc(bond)} USDC bond at stake. If the claim was true the grantee is paid and
-                  takes the disputer&apos;s bond; if false the milestone reopens and the disputer takes the grantee&apos;s.
-                  On mainnet this goes to UMA&apos;s token-holder vote.
+                  Both sides have a {formatUsdc(bond)} USDC bond at stake. If the grantee is right, the milestone is paid
+                  and they take the disputer&apos;s bond. If the disputer is right, the claim is rejected, the milestone
+                  reopens and the disputer takes the grantee&apos;s bond. On mainnet UMA&apos;s token holders decide.
                 </p>
                 {disputer && (
                   <p className="m-0 text-[12.5px]" style={{ opacity: 0.7 }}>
@@ -447,14 +568,18 @@ export function MilestoneCard({
                   <p className="kicker m-0">Testnet only · stand-in for UMA&apos;s vote</p>
                   {answered ? (
                     <p className="m-0 text-[12.5px]" style={{ opacity: 0.85 }}>
-                      <strong>Answered:</strong> the claim was{" "}
-                      {answer === undefined ? "…" : answer === UMA_TRUE ? "true" : "false"}. Settle below to apply it.
+                      <strong>Answered:</strong>{" "}
+                      {answer === undefined
+                        ? "…"
+                        : answer === UMA_TRUE
+                          ? "the grantee is right. Settling approves the milestone and gives the grantee the disputer's bond."
+                          : "the disputer is right. Settling rejects the claim, reopens the milestone and gives the disputer the grantee's bond."}
                     </p>
                   ) : canAnswerAsUma ? (
                     <>
                       <p className="m-0 text-[12.5px]" style={{ opacity: 0.75 }}>
-                        You have nothing at stake in this dispute, so you can stand in for UMA&apos;s voters. Pick the
-                        outcome, then settle to apply it.
+                        You have nothing at stake in this dispute, so you can stand in for UMA&apos;s voters. Read the
+                        evidence and the dispute, decide who is right, then settle to apply it.
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -462,14 +587,14 @@ export function MilestoneCard({
                           onClick={() => answerAsUma(true)}
                           disabled={busy !== null}
                         >
-                          {busy === "answer-true" ? "Answering…" : "Claim was true"}
+                          {busy === "answer-true" ? "Answering…" : "Grantee is right"}
                         </button>
                         <button
                           className="btn-secondary font-body font-semibold"
                           onClick={() => answerAsUma(false)}
                           disabled={busy !== null}
                         >
-                          {busy === "answer-false" ? "Answering…" : "Claim was false"}
+                          {busy === "answer-false" ? "Answering…" : "Disputer is right"}
                         </button>
                       </div>
                     </>
@@ -491,7 +616,13 @@ export function MilestoneCard({
                 {answered ? (
                   <div className="flex flex-wrap items-center gap-2">
                     <button className="btn-primary" onClick={settle} disabled={!isConnected || busy !== null}>
-                      {busy === "settle" ? "Settling…" : "Settle"}
+                      {busy === "settle"
+                        ? "Settling…"
+                        : answer === UMA_TRUE
+                          ? "Settle — approve the milestone"
+                          : answer === UMA_FALSE
+                            ? "Settle — reject the claim"
+                            : "Settle"}
                     </button>
                     <p className="m-0 flex-1 basis-[220px] text-[12px]" style={{ opacity: 0.6 }}>
                       The dispute has an answer, so anyone can settle now — settling only applies it.
@@ -527,7 +658,7 @@ export function MilestoneCard({
               >
                 <p className="m-0 font-heading text-base">Claim rejected</p>
                 <p className="m-0 mt-1 text-[13px]" style={{ opacity: 0.75 }}>
-                  UMA found the last claim false, so its bond went to the disputer. The milestone is open to claim again
+                  The disputer was right, so the grantee&apos;s bond went to them. The milestone is open to claim again
                   with stronger evidence.
                 </p>
               </div>

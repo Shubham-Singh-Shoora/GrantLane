@@ -7,6 +7,7 @@ import {GrantEscrow} from "../src/GrantEscrow.sol";
 import {IOptimisticOracleV3} from "../src/interfaces/IOptimisticOracleV3.sol";
 import {IMockOracleAncillary, UmaSandbox} from "../script/UmaSandbox.sol";
 import {SettlementReceiver} from "../src/automation/SettlementReceiver.sol";
+import {DisputeRegistry} from "../src/DisputeRegistry.sol";
 
 /// @notice GrantEscrow against the real UMA Optimistic Oracle V3 and Circle USDC on a
 ///         Base Sepolia fork. Skipped unless BASE_SEPOLIA_RPC_URL is set.
@@ -167,6 +168,35 @@ contract GrantEscrowForkTest is Test {
         assertEq(_status(0), uint8(GrantEscrow.MilestoneStatus.Approved));
         assertEq(_status(1), uint8(GrantEscrow.MilestoneStatus.Approved));
         assertEq(escrow.pendingWithdrawals(grantee), M0 + M1);
+    }
+
+    /// @dev Disputing through the registry against the real oracle: the reason is
+    ///      recorded, the dispute is filed in the caller's name, and when the disputer is
+    ///      right UMA pays them — not the registry, which is only the caller UMA sees.
+    function test_fork_disputeRegistryFilesOnRealUma() public {
+        DisputeRegistry registry = new DisputeRegistry(escrow);
+        address disputer = makeAddr("fork-disputer");
+        deal(address(USDC), disputer, 5e6);
+        vm.prank(disputer);
+        USDC.approve(address(registry), type(uint256).max);
+
+        bytes32 assertionId = _submit(0);
+        uint256 assertionTime = block.timestamp;
+
+        vm.prank(disputer);
+        registry.dispute(grantId, 0, keccak256("the demo link is dead"), "https://grantlane.app/dispute/0x01");
+        assertEq(_status(0), uint8(GrantEscrow.MilestoneStatus.Disputed));
+        assertEq(USDC.balanceOf(address(registry)), 0, "registry holds nothing");
+
+        _answerDispute(assertionId, assertionTime, UmaSandbox.FALSE);
+        escrow.settle(grantId, 0);
+
+        assertEq(_status(0), uint8(GrantEscrow.MilestoneStatus.Rejected));
+        assertEq(USDC.balanceOf(disputer), 5e6 + BOND - BURN, "UMA paid the disputer, not the registry");
+        DisputeRegistry.Dispute[] memory ds = registry.disputesFor(grantId, 0);
+        assertEq(ds.length, 1);
+        assertEq(ds[0].disputer, disputer);
+        assertEq(ds[0].assertionId, assertionId);
     }
 
     /// @dev The CRE path: the workflow reads checkUpkeep off-chain and its report — the

@@ -51,3 +51,34 @@ export function canonicalEvidence(e: EvidenceFields): string {
 export function hashEvidence(e: EvidenceFields): Hex {
   return keccak256(toHex(canonicalEvidence(e)));
 }
+
+/**
+ * A dispute's written reason. DisputeRegistry records this hash on-chain in the same
+ * transaction as the UMA dispute, and the bundle names the assertion it disputes, so
+ * a reason can't be quietly moved to a different claim.
+ */
+export type DisputeFields = {
+  grantId: string;
+  milestoneId: number;
+  assertionId: Hex;
+  reason: string;
+  links: string[];
+  submittedAt: string;
+};
+
+export function canonicalDispute(d: DisputeFields): string {
+  return JSON.stringify({
+    version: 1,
+    kind: "dispute",
+    grantId: d.grantId,
+    milestoneId: d.milestoneId,
+    assertionId: d.assertionId.toLowerCase(),
+    reason: d.reason,
+    links: d.links,
+    submittedAt: d.submittedAt,
+  });
+}
+
+export function hashDispute(d: DisputeFields): Hex {
+  return keccak256(toHex(canonicalDispute(d)));
+}

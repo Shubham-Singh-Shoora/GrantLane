@@ -1,5 +1,12 @@
 import { notFound } from "next/navigation";
-import { grantEscrowAddress, readEscrowTerms, readGrant, readMilestones, usdcAddress } from "@/lib/contracts";
+import {
+  disputeRegistryAddress,
+  grantEscrowAddress,
+  readEscrowTerms,
+  readGrant,
+  readMilestones,
+  usdcAddress,
+} from "@/lib/contracts";
 import { GrantDetail } from "@/components/GrantDetail";
 import { SetupNotice } from "@/components/SetupNotice";
 import { milestonesForGrant } from "@/lib/applications";
@@ -27,6 +34,7 @@ export default async function GrantPage({ params }: { params: { id: string } }) 
           usdcAddress: usdcAddress(),
           bond: escrowTerms.bond.toString(),
           liveness: escrowTerms.liveness.toString(),
+          disputeRegistryAddress: disputeRegistryAddress(),
         }}
         grant={{
           grantId: params.id,

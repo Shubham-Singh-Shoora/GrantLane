@@ -58,11 +58,14 @@ bond is already back.
 
 ## 5b. The dispute path (milestone 2)
 
-Claim milestone 2 with weak evidence. As the grantor, press **Dispute** (1 USDC bond). Point out that
+Claim milestone 2 with weak evidence. As the grantor, press **Dispute this claim**, write what's wrong
+(for example, "the demo link returns a 404") and file it with the 1 USDC bond. The reason is recorded
+on-chain in the same transaction; open **Read why** in the dispute history to show it. Point out that
 the dashed **Testnet only** panel gives the grantor no answer buttons: the app refuses the answer to
-both sides of a dispute. Switch to a **third wallet**, neither the claimant nor the disputer, answer
-**Claim was false**, then **Settle** from any wallet. The milestone reads **Rejected** and reopens.
-The grantor got their bond back plus half the applicant's; the other half is UMA's burn.
+both sides of a dispute. Switch to a **third wallet**, neither the claimant nor the disputer, choose
+**Disputer is right**, then **Settle — reject the claim** from any wallet. The milestone reads
+**Rejected** and reopens, and the dispute history still shows the reason. The grantor got their bond
+back plus half the applicant's; the other half is UMA's burn.
 
 > "Neither side decides its own dispute. As the disputer I'm given no answer buttons at all — a
 > neutral wallet stands in for UMA's voters here, and on mainnet it's UMA's token holders who vote."

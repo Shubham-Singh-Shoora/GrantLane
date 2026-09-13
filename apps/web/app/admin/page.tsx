@@ -10,6 +10,7 @@ import {
   readGrantCount,
   readMilestones,
   settlementReceiverAddress,
+  disputeRegistryAddress,
   STATUS,
 } from "@/lib/contracts";
 import { CHAIN_ID } from "@/lib/chain";
@@ -100,6 +101,7 @@ export default async function AdminPage() {
   const open = board.rows.filter((r) => r.status === STATUS.Claimed || r.status === STATUS.Disputed).length;
   const disputes = board.rows.filter((r) => r.status === STATUS.Disputed).length;
   const receiver = settlementReceiverAddress();
+  const disputeRegistry = disputeRegistryAddress();
 
   return (
     <GranterOnly>
@@ -179,6 +181,9 @@ export default async function AdminPage() {
           { label: "UMA Optimistic Oracle V3", value: board.oracle, hint: "Claims are asserted here; anyone can dispute" },
           ...(receiver
             ? [{ label: "SettlementReceiver", value: receiver, hint: "The CRE settlement workflow writes through this" }]
+            : []),
+          ...(disputeRegistry
+            ? [{ label: "DisputeRegistry", value: disputeRegistry, hint: "Disputes are filed here with their reason" }]
             : []),
           { label: "Attestor", value: board.attestor, hint: "Signs verified Selfie Check attestations" },
           {

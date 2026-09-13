@@ -1,8 +1,9 @@
 import { createPublicClient, http, type Address, type Hex } from "viem";
 import { appChain, RPC_URL } from "./chain";
 import { grantEscrowAbi } from "./grantEscrowAbi";
+import { disputeRegistryAbi } from "./disputeRegistryAbi";
 
-export { grantEscrowAbi };
+export { grantEscrowAbi, disputeRegistryAbi };
 
 /** Reverts loudly at import time rather than silently reading address(0). */
 function requiredAddress(value: string | undefined, name: string): Address {
@@ -18,6 +19,16 @@ export function grantEscrowAddress(): Address {
 
 export function usdcAddress(): Address {
   return requiredAddress(process.env.NEXT_PUBLIC_USDC_ADDRESS, "NEXT_PUBLIC_USDC_ADDRESS");
+}
+
+/**
+ * The DisputeRegistry that files a dispute together with its written reason. Disputing
+ * is disabled when this isn't set: a dispute without a recorded reason is exactly what
+ * the registry exists to prevent.
+ */
+export function disputeRegistryAddress(): Address | null {
+  const value = process.env.NEXT_PUBLIC_DISPUTE_REGISTRY_ADDRESS;
+  return value && /^0x[0-9a-fA-F]{40}$/.test(value) ? (value as Address) : null;
 }
 
 /** Optional: the CRE workflow's SettlementReceiver, shown on the admin page when set. */
@@ -69,6 +80,8 @@ export type EscrowTerms = {
   bond: string;
   /** Dispute window, seconds. */
   liveness: string;
+  /** Where disputes are filed with their reason; null disables disputing. */
+  disputeRegistryAddress: Address | null;
 };
 
 export async function readGrant(grantId: bigint): Promise<Grant> {

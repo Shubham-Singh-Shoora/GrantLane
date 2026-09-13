@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { erc20Abi, type Address, type Hex } from "viem";
 import { useAccount, useReadContract } from "wagmi";
@@ -153,6 +153,34 @@ export function MilestoneCard({
     (address.toLowerCase() === grantee.toLowerCase() ||
       (!!disputer && address.toLowerCase() === disputer.toLowerCase()));
   const canAnswerAsUma = isConnected && !!disputer && !isParty;
+
+  // The price request UMA opened for this dispute: made for the assertion time,
+  // which the escrow fixes as expiresAt - liveness in the same transaction.
+  const assertionTime = expiresAt > 0 ? BigInt(expiresAt) - BigInt(terms.liveness) : 0n;
+  const disputeAncillary = useMemo(
+    () => disputeAncillaryData(milestone.assertionId, grantee),
+    [milestone.assertionId, grantee],
+  );
+
+  // Settling a disputed claim reverts until the dispute has an answer, so Settle
+  // only appears once one exists. Polled, because the answer usually comes from a
+  // different wallet than the one looking at this page.
+  const { data: answered, refetch: refetchAnswered } = useReadContract({
+    address: UMA_SANDBOX_ORACLE_ADDRESS,
+    abi: umaSandboxOracleAbi,
+    functionName: "hasPrice",
+    args: [ASSERT_TRUTH, assertionTime, disputeAncillary],
+    chainId: CHAIN_ID,
+    query: { enabled: disputed, refetchInterval: disputed ? 5_000 : false },
+  });
+  const { data: answer, refetch: refetchAnswer } = useReadContract({
+    address: UMA_SANDBOX_ORACLE_ADDRESS,
+    abi: umaSandboxOracleAbi,
+    functionName: "getPrice",
+    args: [ASSERT_TRUTH, assertionTime, disputeAncillary],
+    chainId: CHAIN_ID,
+    query: { enabled: disputed && answered === true },
+  });
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -259,20 +287,14 @@ export function MilestoneCard({
 
   const answerAsUma = (claimWasTrue: boolean) =>
     run(claimWasTrue ? "answer-true" : "answer-false", async () => {
-      // The escrow sets expiresAt = assertion time + liveness in the same transaction,
-      // and UMA's price request is made for the assertion time.
-      const assertionTime = BigInt(expiresAt) - BigInt(terms.liveness);
       await send({
         address: UMA_SANDBOX_ORACLE_ADDRESS,
         abi: umaSandboxOracleAbi,
         functionName: "pushPrice",
-        args: [
-          ASSERT_TRUTH,
-          assertionTime,
-          disputeAncillaryData(milestone.assertionId, grantee),
-          claimWasTrue ? UMA_TRUE : UMA_FALSE,
-        ],
+        args: [ASSERT_TRUTH, assertionTime, disputeAncillary, claimWasTrue ? UMA_TRUE : UMA_FALSE],
       });
+      await refetchAnswered();
+      await refetchAnswer();
       return `Answered: the claim was ${claimWasTrue ? "true" : "false"}. Settle to apply it.`;
     });
 
@@ -292,7 +314,9 @@ export function MilestoneCard({
       ? " · window closed, ready to settle"
       : ` · open to dispute for ${countdown(secondsLeft)}`
     : disputed
-      ? " · with UMA"
+      ? answered
+        ? " · answered, ready to settle"
+        : " · disputed, awaiting an answer"
       : "";
 
   return (
@@ -421,7 +445,12 @@ export function MilestoneCard({
                   style={{ border: "1.5px dashed color-mix(in srgb, var(--color-text) 25%, transparent)" }}
                 >
                   <p className="kicker m-0">Testnet only · stand-in for UMA&apos;s vote</p>
-                  {canAnswerAsUma ? (
+                  {answered ? (
+                    <p className="m-0 text-[12.5px]" style={{ opacity: 0.85 }}>
+                      <strong>Answered:</strong> the claim was{" "}
+                      {answer === undefined ? "…" : answer === UMA_TRUE ? "true" : "false"}. Settle below to apply it.
+                    </p>
+                  ) : canAnswerAsUma ? (
                     <>
                       <p className="m-0 text-[12.5px]" style={{ opacity: 0.75 }}>
                         You have nothing at stake in this dispute, so you can stand in for UMA&apos;s voters. Pick the
@@ -459,14 +488,20 @@ export function MilestoneCard({
                   </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <button className="btn-primary" onClick={settle} disabled={!isConnected || busy !== null}>
-                    {busy === "settle" ? "Settling…" : "Settle"}
-                  </button>
-                  <p className="m-0 flex-1 basis-[220px] text-[12px]" style={{ opacity: 0.6 }}>
-                    Anyone can settle once UMA has answered — settling only applies the answer.
+                {answered ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button className="btn-primary" onClick={settle} disabled={!isConnected || busy !== null}>
+                      {busy === "settle" ? "Settling…" : "Settle"}
+                    </button>
+                    <p className="m-0 flex-1 basis-[220px] text-[12px]" style={{ opacity: 0.6 }}>
+                      The dispute has an answer, so anyone can settle now — settling only applies it.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="m-0 text-[12px]" style={{ opacity: 0.6 }}>
+                    Settle appears once the dispute has an answer. Until then nobody can settle it — UMA refuses to.
                   </p>
-                </div>
+                )}
               </div>
             )}
 

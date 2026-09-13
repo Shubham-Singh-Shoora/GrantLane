@@ -75,6 +75,31 @@ export const umaAssertionAbi = [
 ] as const;
 
 export const umaSandboxOracleAbi = [
+  // Whether a dispute has been answered. OOv3 can't settle a disputed assertion
+  // until it has, so the UI waits on this before offering Settle.
+  {
+    type: "function",
+    name: "hasPrice",
+    stateMutability: "view",
+    inputs: [
+      { name: "identifier", type: "bytes32" },
+      { name: "time", type: "uint256" },
+      { name: "ancillaryData", type: "bytes" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  // The answer itself (1e18 = claim true, 0 = false). Reverts until answered.
+  {
+    type: "function",
+    name: "getPrice",
+    stateMutability: "view",
+    inputs: [
+      { name: "identifier", type: "bytes32" },
+      { name: "time", type: "uint256" },
+      { name: "ancillaryData", type: "bytes" },
+    ],
+    outputs: [{ name: "", type: "int256" }],
+  },
   {
     type: "function",
     name: "pushPrice",

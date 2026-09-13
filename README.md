@@ -8,8 +8,7 @@ World ID Selfie Check makes sure a real person is behind every application and e
 
 ## Demo video
 
-<!-- Replace this line with the demo video link. -->
-Coming soon.
+▶ [Watch the demo on YouTube](https://www.youtube.com/watch?v=S7ISRSlR8P0)
 
 ## Documentation
 
